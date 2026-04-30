@@ -22,7 +22,7 @@ class MerakiClient:
                 suppress_logging=True,
             )
         except Exception as e:
-            raise MerakiError(f"Could not initialize Meraki Dashboard client: {e}") from e
+            raise MerakiError(f"Could not initialize dashboard client: {e}") from e
 
     def validate(self) -> bool:
         """Hit /organizations as a cheap auth check. Raises if the key is bad."""
@@ -37,7 +37,7 @@ class MerakiClient:
         except meraki.APIError as e:
             raise MerakiError(f"Invalid API key: {e}") from e
         except Exception as e:
-            raise MerakiError(f"Could not reach Meraki Dashboard API: {e}") from e
+            raise MerakiError(f"Could not reach dashboard API: {e}") from e
         return sorted(orgs, key=lambda org: org["name"].lower())
 
     def list_switch_networks(self, organization_id: str):

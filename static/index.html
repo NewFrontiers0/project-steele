@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8" />
-<title>Meraki</title>
+<title>project-steele</title>
 <style>
   body { margin:0; font-family:'Inter','Helvetica Neue',Helvetica,Arial,sans-serif; color:#1a2433; background:#f5f7f9; }
   .topbar { background:#0e2747; padding:14px 28px; color:#fff; display:flex; align-items:center; gap:14px; }
@@ -94,19 +94,19 @@
   <div id="loginOverlay" style="position:fixed; inset:0; background:#0e2747; display:flex; align-items:center; justify-content:center; z-index:1000;">
   <div style="background:#fff; border-radius:8px; padding:32px; width:460px; max-width:90vw; box-shadow:0 20px 60px rgba(0,0,0,0.3);">
     <div style="display:flex; align-items:baseline; gap:8px; margin-bottom:8px;">
-      <div style="font-size:22px; font-weight:600; color:#0e2747;">Meraki</div>
-      <div id="loginVersion" style="font-size:11px; color:#8896a8; font-weight:500;">v1.0.0</div>
+      <div style="font-size:22px; font-weight:600; color:#0e2747;">project-steele</div>
+      <div id="loginVersion" style="font-size:11px; color:#8896a8; font-weight:500;">v1.0.1</div>
     </div>
-    <div style="font-size:13px; color:#5a6878; margin-bottom:20px;">Enter your Meraki dashboard API key, then choose the organization you want to work in.</div>
+    <div style="font-size:13px; color:#5a6878; margin-bottom:20px;">Enter your project-steele API key, then choose the organization you want to work in.</div>
     <label style="font-size:12px; color:#5a6878; display:block; margin-bottom:6px;">API Key</label>
-    <input id="loginKey" type="password" autocomplete="off" placeholder="Meraki dashboard API key" style="width:100%; padding:10px 12px; border:1px solid #c1cad5; border-radius:6px; font-size:13px; box-sizing:border-box;" />
+    <input id="loginKey" type="password" autocomplete="off" placeholder="project-steele API key" style="width:100%; padding:10px 12px; border:1px solid #c1cad5; border-radius:6px; font-size:13px; box-sizing:border-box;" />
     <div id="orgStep" class="hidden" style="margin-top:14px;">
       <label style="font-size:12px; color:#5a6878; display:block; margin-bottom:6px;">Organization</label>
       <select id="loginOrg"></select>
     </div>
     <div id="loginErr" style="color:#b3261e; font-size:12px; margin-top:8px; min-height:16px;"></div>
     <button id="loginBtn" class="primary" style="width:100%; margin-top:16px; padding:10px;">Continue</button>
-    <div style="font-size:11px; color:#8896a8; margin-top:14px; text-align:center;">Get your key from <a href="https://dashboard.meraki.com" target="_blank" style="color:#1f6feb;">dashboard.meraki.com</a> → My Profile → API access</div>
+    <div style="font-size:11px; color:#8896a8; margin-top:14px; text-align:center;">Get your key from the dashboard → My Profile → API access</div>
   </div>
 </div>
 
@@ -138,7 +138,7 @@
 </div>
 
 <div class="topbar">
-  <div class="brand">Meraki <span id="appVersion" class="app-version">v1.0.0</span></div>
+  <div class="brand">project-steele <span id="appVersion" class="app-version">v1.0.1</span></div>
   <div class="topbar-actions">
     <button id="cliLauncher" class="topbar-action">CLI</button>
     <button id="swimLauncher" class="topbar-action">SWIM</button>
@@ -197,7 +197,7 @@
       <div class="mode-opt" data-mode="device" id="modeDevice"><strong>Config source: Device</strong></div>
     </div>
     <div id="cloudWarning" class="hidden" style="margin-top:12px; padding:12px 14px; background:#fef4e6; border:1px solid #fbd99a; border-radius:6px; color:#7a4e08; font-size:13px; line-height:1.5;">
-      <strong>Warning:</strong> the switch will factory reset and reboot. All existing IOS-XE configuration will be lost. After onboarding, all configuration must be done from the Meraki dashboard.
+      <strong>Warning:</strong> the switch will factory reset and reboot. All existing IOS-XE configuration will be lost. After onboarding, all configuration must be done from the project-steele dashboard.
     </div>
 
     <h2 style="margin-top:22px;">3 · Default network <span id="selectedOrgName" style="font-size:12px; color:#5a6878; font-weight:400;"></span></h2>
@@ -224,7 +224,7 @@
     <div class="stage-bar" id="stageBar">
       <div class="stage-pill" data-stage="precheck">1 · Precheck</div>
       <div class="stage-pill" data-stage="upgrade">2 · Upgrade</div>
-      <div class="stage-pill" data-stage="enable">3 · Enable Meraki</div>
+      <div class="stage-pill" data-stage="enable">3 · Enable project-steele</div>
       <div class="stage-pill" data-stage="claim">4 · Claim into network</div>
     </div>
 
@@ -239,7 +239,7 @@
       <div style="font-size:13px; color:#1858c4; margin-bottom:10px;"><strong id="prereqCount"></strong> missing device-mode prerequisites. Review the config below and apply when ready.</div>
       <div id="prereqDetails" style="margin-bottom:10px;"></div>
       <button class="primary" id="btnApplyPrereqs">Apply prereqs config</button>
-      <div style="font-size:11px; color:#1858c4; margin-top:8px;">Reference: <a href="https://documentation.meraki.com/MS/Cloud_Management_with_IOS_XE/Connect_Hybrid_Operating_Mode_Catalyst_Switch_to_Dashboard" target="_blank" style="color:#1858c4;">Meraki device-configuration prerequisites</a></div>
+      <div style="font-size:11px; color:#1858c4; margin-top:8px;">Reference: project-steele device-configuration prerequisites</div>
     </div>
 
     <div id="upgradePicker" class="hidden" style="margin-top:18px; padding:14px 16px; background:#fef4e6; border:1px solid #fbd99a; border-radius:6px;">
@@ -350,9 +350,9 @@ let firmwareDownloadsPinnedOpen = false;
 let runId = null;
 let mode = null;  // must be explicitly selected by the user
 
-const API_KEY_STORAGE = 'meraki_api_key';
-const ORG_ID_STORAGE = 'meraki_org_id';
-const ORG_NAME_STORAGE = 'meraki_org_name';
+const API_KEY_STORAGE = 'project_steele_api_key';
+const ORG_ID_STORAGE = 'project_steele_org_id';
+const ORG_NAME_STORAGE = 'project_steele_org_name';
 
 let loginOrganizations = [];
 let loginKeyForOrganizations = '';
@@ -417,7 +417,7 @@ document.getElementById('loginBtn').addEventListener('click', async () => {
       loginBtn.textContent = 'Checking...';
       const res = await fetch('/api/login', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Meraki-API-Key': key },
+        headers: { 'Content-Type': 'application/json', 'X-Project-Steele-API-Key': key },
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({ detail: 'Login failed' }));
@@ -429,7 +429,7 @@ document.getElementById('loginBtn').addEventListener('click', async () => {
       loginOrganizations = data.organizations || [];
       loginKeyForOrganizations = key;
       if (!loginOrganizations.length) {
-        errBox.textContent = 'No Meraki organizations are available for this API key';
+        errBox.textContent = 'No project-steele organizations are available for this API key';
         resetOrgLoginStep();
         return;
       }
@@ -482,8 +482,8 @@ async function api(path, body) {
   const headers = {'Content-Type':'application/json'};
   const key = getApiKey();
   const orgId = getOrgId();
-  if (key) headers['X-Meraki-API-Key'] = key;
-  if (orgId) headers['X-Meraki-Org-Id'] = orgId;
+  if (key) headers['X-Project-Steele-API-Key'] = key;
+  if (orgId) headers['X-Project-Steele-Org-Id'] = orgId;
   const opts = { method: body !== undefined ? 'POST' : 'GET', headers };
   if (body !== undefined) opts.body = JSON.stringify(body);
   const r = await fetch(path, opts);
@@ -945,7 +945,7 @@ $('btnCreate').addEventListener('click', async () => {
   if (!devices.length) return showErr('Add at least one device');
   if (!$('pw').value) return showErr('Password is required');
   if (!mode) return showErr('Select a config source (Cloud or Device)');
-  if (!$('defaultNet').value) return showErr('Select a default Meraki network');
+  if (!$('defaultNet').value) return showErr('Select a default project-steele network');
 
   $('btnCreate').disabled = true;
   $('btnCreate').textContent = 'Creating...';
@@ -1115,7 +1115,7 @@ function renderRun(run) {
   } else if (needsUpgrade.length) {
     btn.disabled = true; btn.textContent = 'Upgrade required'; btn.dataset.next = '';
   } else if (nextMap[cs]) {
-    const labels = { enable: mode === 'cloud' ? 'Enable Meraki service →' : 'Configure device mode →', claim: 'Claim into network →' };
+    const labels = { enable: mode === 'cloud' ? 'Enable project-steele service →' : 'Configure device mode →', claim: 'Claim into network →' };
     btn.disabled = false; btn.textContent = labels[nextMap[cs]]; btn.dataset.next = nextMap[cs];
   } else {
     btn.disabled = true; btn.textContent = 'Waiting...'; btn.dataset.next = '';

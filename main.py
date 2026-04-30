@@ -1,4 +1,4 @@
-"""Meraki Catalyst onboarder — gated stages with firmware upgrade."""
+"""project-steele Catalyst onboarder — gated stages with firmware upgrade."""
 from __future__ import annotations
 
 import hmac
@@ -131,7 +131,7 @@ class OrganizationOption(BaseModel):
     name: str
 
 
-app = FastAPI(title="Meraki Catalyst Onboarder")
+app = FastAPI(title="project-steele")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 
@@ -148,20 +148,22 @@ def version():
 
 
 def _get_api_key(
+    x_project_steele_api_key: Optional[str] = Header(default=None, alias="X-Project-Steele-API-Key"),
     x_meraki_api_key: Optional[str] = Header(default=None, alias="X-Meraki-API-Key"),
 ) -> str:
-    api_key = (x_meraki_api_key or "").strip()
+    api_key = (x_project_steele_api_key or x_meraki_api_key or "").strip()
     if not api_key:
-        raise HTTPException(status_code=401, detail="Meraki API key is required")
+        raise HTTPException(status_code=401, detail="project-steele API key is required")
     return api_key
 
 
 def _get_org_id(
+    x_project_steele_org_id: Optional[str] = Header(default=None, alias="X-Project-Steele-Org-Id"),
     x_meraki_org_id: Optional[str] = Header(default=None, alias="X-Meraki-Org-Id"),
 ) -> str:
-    org_id = (x_meraki_org_id or "").strip()
+    org_id = (x_project_steele_org_id or x_meraki_org_id or "").strip()
     if not org_id:
-        raise HTTPException(status_code=401, detail="Meraki organization is required")
+        raise HTTPException(status_code=401, detail="project-steele organization is required")
     return org_id
 
 
@@ -179,7 +181,7 @@ def login(api_key: str = Depends(_get_api_key)):
     except MerakiError as e:
         raise HTTPException(status_code=_meraki_error_status(e), detail=str(e))
     if not organizations:
-        raise HTTPException(status_code=403, detail="No Meraki organizations are available for this API key")
+        raise HTTPException(status_code=403, detail="No project-steele organizations are available for this API key")
     return {"ok": True, "organizations": [OrganizationOption(**org) for org in organizations]}
 
 
