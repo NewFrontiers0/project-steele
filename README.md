@@ -1,0 +1,152 @@
+# Meraki Catalyst Onboarder
+
+Sibling to `meraki-onboarder` (the single-device wizard). Same Netmiko + Meraki SDK plumbing, but onboards a list of switches in parallel and shows live status in a job table.
+
+## Quick start
+
+```bash
+unzip meraki-onboarder-bulk.zip
+cd meraki-onboarder-bulk
+./run.sh
+```
+
+Open <http://127.0.0.1:8001> on the machine running the app, or `http://<machine-ip>:8001` from another device on the LAN, then enter your Meraki dashboard API key and choose the organization you want to work in. The bulk app runs on **port 8001** so you can run it alongside the single-device app (which runs on 8000).
+
+`./run.sh` automatically stops existing processes listening on the app port and the SWIM transfer ports before starting. To disable that behavior, run `KILL_PORT_LISTENER=0 ./run.sh`. To use different ports, run `PORT=8002 SWIM_FILE_PORT=9001 SWIM_FTP_PORT=2122 ./run.sh`. TFTP uses standard UDP/69 because Cisco IOS-XE rejects TFTP URLs with explicit ports. On Linux, `./run.sh` automatically grants the local Python runtime permission to bind UDP/69 and may prompt for `sudo` once; Docker works without that extra step.
+
+## Docker
+
+A container build is included. The image is stateless — the Meraki API key is entered in the browser, firmware images live in a named volume, and the app runs as-is.
+
+### Build
+
+```bash
+docker build -t catalyst-onboarder .
+```
+
+### Run — one-shot with docker run
+
+```bash
+docker run -d \
+    --name catalyst-onboarder \
+    -p 8001:8001 \
+    -p 9000:9000 \
+    -p 2121:2121 \
+    -p 69:69/udp \
+    -p 30000-30009:30000-30009 \
+    -v catalyst-firmware:/app/firmware \
+    --restart unless-stopped \
+    catalyst-onboarder
+```
+
+Then open <http://localhost:8001>.
+
+### Run — with docker compose
+
+```bash
+docker compose up -d
+```
+
+Set `FIRMWARE_URLS` only if you want to override the built-in Shelton firmware URLs. Meraki API keys are entered in the browser.
+
+### Firmware images
+
+By default, both `./run.sh` and Docker discover firmware images from `http://firmware.shelton.digital:8999/`. Any listed or linked filename that starts with `cat9k` and ends with `.bin` is queued for download.
+
+`FIRMWARE_URLS` is an optional space-separated override. Set it to `none` to disable automatic firmware downloads. If it contains a repository URL or a legacy URL to a `cat9k*.bin` file, the app scans that repository and queues every matching `cat9k*.bin` image. If the default Shelton repository listing is unavailable or incomplete, the app still queues the three expected Shelton images. On server startup, the FastAPI app checks each image against the firmware folder or volume; if the file already exists with non-zero size it's skipped, otherwise it's downloaded in the background and shown in the top-right firmware downloads panel. The Docker named volume persists across restarts so you pay the multi-GB download cost once per image version.
+
+If you'd rather populate the volume another way, set `FIRMWARE_URLS=none` and use `docker cp` or pre-seed via a bind mount.
+
+If an older `.env` still points at one specific `cat9k*.bin` file, the app treats that as a repository hint and scans the parent repository for all matching `cat9k*.bin` files.
+
+Failed downloads can be retried from the firmware downloads panel. Completed or cached downloads can be restarted from the same panel, which removes the existing file and downloads it again.
+
+### Network reachability
+
+The container needs to reach both the internet (for `api.meraki.com`) and your switch management network. On Linux with `--network host` both work without config. On Docker Desktop (macOS/Windows), the default bridge network's NAT usually handles it — verify with `docker exec catalyst-onboarder ping 10.1.1.53`.
+
+### Logs
+
+```bash
+docker logs -f catalyst-onboarder
+```
+
+Firmware-download progress and errors are shown in the web UI.
+
+### Switch CLI
+
+Use the **CLI** button in the top-right toolbar to open a dedicated SSH command page. Enter the switch IP or hostname, username, password, and one or more CLI commands. The backend uses the same Netmiko IOS-XE SSH wrapper as the onboarding workflow and returns the command output in the page.
+
+### SWIM
+
+Use the **SWIM** button in the top-right toolbar for single-switch firmware management. Pick one of the downloaded `cat9k*.bin` firmware images, choose a transfer method, enter the switch IP plus SSH credentials, and start the upgrade. Firmware images are sorted newest-first. SWIM warns before downgrades/reinstalls, but you can run one intentionally by enabling **Allow downgrade or reinstall**. The backend follows IOS-XE install-mode workflow: MD5 check, switch-initiated copy from the app to flash, flash verification, inactive-package cleanup, `install add ... activate commit`, reload monitoring, reconnect, and final install commit.
+
+SWIM now defaults to **Direct install HTTP** because HTTP/FTP/SCP copies to `flash:` can fail after the first data window on some IOS-XE switches. Direct install sends `install add file http://...` first, then `install activate commit prompt-level none` after the add phase succeeds, letting the IOS-XE install subsystem pull and process the remote image instead of staging the whole `.bin` with a separate copy command first. TFTP, SCP, FTP active/passive, and HTTP copy remain selectable fallbacks. TFTP uses UDP/69, FTP uses TCP/2121 for control, passive FTP uses TCP/30000-30009 by default, and HTTP uses TCP/9000 by default with byte-range support for IOS-XE download clients.
+
+HTTP firmware serving uses conservative paced streaming by default: 512-byte chunks, a 5 ms delay between chunks, a 500 ms pause after response headers, a small TCP send buffer, and TCP_MAXSEG where the OS supports it. The dedicated SWIM HTTP server applies TCP_MAXSEG on the listening socket before the TCP handshake so the switch should see a reduced MSS in the SYN-ACK. This slow profile matches Catalyst clients that can download from a deliberately paced Python HTTP server but fail when a VM sends the firmware body in a fast burst. Override with `SWIM_HTTP_CHUNK_BYTES`, `SWIM_HTTP_CHUNK_DELAY_MS`, `SWIM_HTTP_INITIAL_DELAY_MS`, `SWIM_HTTP_TCP_MAXSEG`, and `SWIM_HTTP_SNDBUF_BYTES` if you need to tune throughput.
+
+During TFTP, SCP, FTP, and direct HTTP transfers, the app logs byte progress and updates the SWIM progress bar while the image is transferring. Direct install keeps the SSH command session attached and streams IOS-XE install output until the reload starts or the command fails. If FTP starts but no bytes move for 5 minutes, SWIM aborts the stalled copy so the job can fail cleanly instead of hanging indefinitely.
+
+SWIM runs `fsck flash:` before the image transfer by default. This can be disabled from the SWIM page, but leaving it enabled is useful when transfers fail after the first small chunk because that often points to flash filesystem trouble.
+
+For switches that use a management VRF, set **Copy VRF** to the management VRF name, commonly `Mgmt-vrf`, and set **Transfer source interface** to the management SVI or interface. The switch must have a route from that VRF/interface to the app host on the chosen transfer ports.
+
+## How it works
+
+1. Enter your Meraki dashboard API key in the browser login screen.
+2. Select the Meraki organization for this onboarding run.
+3. Enter a shared username + password and pick a default target network.
+4. Add device rows (just the management IP for each). Optionally override the target network per row — leave blank to use the default.
+5. Hit **Create run & precheck**. The backend returns a `run_id` immediately and the page switches to a live status table.
+6. The frontend polls `/api/run/{id}` every 1.5s. Each row shows stage, status, parsed version, compatibility check, parsed cloud ID, and any error.
+
+## Concurrency & failure model
+
+- **Up to 5 sessions in parallel** — capped by a thread pool + semaphore in `jobs.py` (`MAX_PARALLEL = 5`). Adjust if your TACACS, link, or dashboard rate limits allow more.
+- **Keep-going on failure** — if switch #17 fails its precheck, the rest of the batch continues. Failed jobs are marked red in the table with the error message.
+- **Stages per device** — `precheck → enable → claim`. A failure at any stage marks the job failed and skips the rest of its stages, but doesn't affect siblings.
+
+## Endpoints
+
+| Method | Path                | Purpose                                            |
+|--------|---------------------|----------------------------------------------------|
+| POST   | `/api/login`        | Validate the browser-supplied Meraki API key and list accessible organizations |
+| POST   | `/api/run`          | Start a batch — returns `run_id`                  |
+| GET    | `/api/run/{id}`     | Live job status — frontend polls this             |
+| GET    | `/api/networks`     | Network dropdown for the selected organization, filtered to switch networks |
+| GET    | `/api/firmware/downloads` | Firmware URL download status for the top-right panel |
+| POST   | `/api/firmware/downloads/retry` | Retry failed firmware downloads, or restart one file with `force: true` |
+| POST   | `/api/firmware/downloads/rescan` | Rescan the firmware repository for cat9k*.bin files |
+| POST   | `/api/cli/run`     | Run CLI command(s) on a switch over SSH             |
+| POST   | `/api/swim/upgrade` | Start a single-switch SWIM firmware upgrade        |
+| GET    | `/api/swim/upgrade/{id}` | Poll SWIM upgrade status, progress, and log output |
+| FTP    | `ftp://<app-host>:2121/{filename}` | SWIM firmware FTP transfer endpoint |
+| TFTP   | `tftp://<app-host>/{filename}` | SWIM firmware TFTP transfer endpoint on UDP/69 |
+| GET    | `http://<app-host>:9000/{filename}` | Optional dedicated plain HTTP firmware endpoint used by SWIM |
+| GET    | `/f/{filename}` | Plain streaming firmware endpoint retained for browser/app testing |
+| GET    | `/firmware-files/{filename}` | Browser-friendly firmware endpoint |
+
+## Layout
+
+```
+meraki-onboarder-bulk/
+  main.py            FastAPI app — endpoints
+  jobs.py            Job store, thread pool, stage runner
+  firmware_downloads.py  Background firmware URL download tracker
+  swim.py            Single-switch SWIM firmware upgrade jobs
+  swim_ftp_server.py  Read-only FTP server for SWIM image pulls
+  swim_file_server.py  Dedicated plain HTTP server for SWIM image pulls
+  switch.py          Netmiko wrapper (shared with single-device app)
+  meraki_client.py   Meraki SDK wrapper (shared)
+  static/index.html  Bulk frontend with live job table
+  requirements.txt
+  .env.example
+  run.sh
+```
+
+## Production notes
+
+- **In-memory job store.** Runs disappear on restart. For real ops, swap `JobStore` for Redis or Postgres — the dataclasses are already JSON-serializable via `asdict`.
+- **Single-process only.** The module-level `store` singleton means you can't run uvicorn with `--workers > 1` until you move state out of process.
+- **Lightweight API key gate only.** Anyone who can reach the port can open the app and attempt requests. Put it behind your normal auth proxy before exposing it.
+- **Firmware upgrades are long-running.** Keep the app process alive while a bulk upgrade or SWIM job is running; in-memory status disappears if the server restarts.

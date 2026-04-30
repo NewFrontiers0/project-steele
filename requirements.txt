@@ -1,0 +1,8 @@
+fastapi>=0.110
+uvicorn[standard]>=0.27
+pydantic>=2.6
+python-dotenv>=1.0
+netmiko>=4.3
+scp>=0.14
+meraki>=1.45
+pyftpdlib>=1.5.9

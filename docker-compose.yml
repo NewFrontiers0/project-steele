@@ -1,0 +1,34 @@
+services:
+  catalyst-onboarder:
+    build: .
+    image: catalyst-onboarder:latest
+    container_name: catalyst-onboarder
+    ports:
+      - "8001:8001"
+      - "9000:9000"
+      - "2121:2121"
+      - "69:69/udp"
+      - "30000-30009:30000-30009"
+    environment:
+      # Optional override: leave blank to use the built-in Shelton firmware URLs.
+      # Set to "none" to disable automatic firmware downloads.
+      # Files are cached in the firmware volume, so subsequent starts skip them.
+      FIRMWARE_URLS: "${FIRMWARE_URLS:-}"
+      # Dedicated plain HTTP server used only for IOS-XE SWIM image pulls.
+      SWIM_FILE_PORT: "${SWIM_FILE_PORT:-9000}"
+      # Conservative HTTP streaming for Catalyst clients behind VM bridges.
+      SWIM_HTTP_CHUNK_BYTES: "${SWIM_HTTP_CHUNK_BYTES:-512}"
+      SWIM_HTTP_CHUNK_DELAY_MS: "${SWIM_HTTP_CHUNK_DELAY_MS:-5}"
+      SWIM_HTTP_INITIAL_DELAY_MS: "${SWIM_HTTP_INITIAL_DELAY_MS:-500}"
+      SWIM_HTTP_TCP_MAXSEG: "${SWIM_HTTP_TCP_MAXSEG:-536}"
+      SWIM_HTTP_SNDBUF_BYTES: "${SWIM_HTTP_SNDBUF_BYTES:-4096}"
+      # FTP fallback/default for SWIM image pulls.
+      SWIM_FTP_PORT: "${SWIM_FTP_PORT:-2121}"
+      SWIM_FTP_PASSIVE_PORTS: "${SWIM_FTP_PASSIVE_PORTS:-30000-30009}"
+      SWIM_TFTP_PORT: "${SWIM_TFTP_PORT:-69}"
+    volumes:
+      - firmware:/app/firmware
+    restart: unless-stopped
+
+volumes:
+  firmware:

@@ -1,0 +1,16 @@
+.DS_Store
+.env
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Local firmware cache: these files are multi-GB and should live outside Git.
+firmware/*.bin
+
+# Local generated archives and runtime output.
+*.zip
+*.log
+*.pcap
