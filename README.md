@@ -14,6 +14,19 @@ Open <http://127.0.0.1:8001> on the machine running the app, or `http://<machine
 
 `./run.sh` automatically stops existing processes listening on the app port and the SWIM transfer ports before starting. To disable that behavior, run `KILL_PORT_LISTENER=0 ./run.sh`. To use different ports, run `PORT=8002 SWIM_FILE_PORT=9001 SWIM_FTP_PORT=2122 ./run.sh`. TFTP uses standard UDP/69 because Cisco IOS-XE rejects TFTP URLs with explicit ports. On Linux, `./run.sh` automatically grants the local Python runtime permission to bind UDP/69 and may prompt for `sudo` once; Docker works without that extra step.
 
+## Versioning
+
+Project Steele uses semantic versioning. The current app version is stored in
+`VERSION` and shown on the login screen and top bar. For normal releases, bump
+the version with the code change:
+
+- patch, such as `1.0.1`, for fixes
+- minor, such as `1.1.0`, for backward-compatible features
+- major, such as `2.0.0`, for breaking changes
+
+The `/api/version` endpoint returns the app version plus the current Git build
+SHA when the app is running from a Git checkout.
+
 ## Docker
 
 A container build is included. The image is stateless — the Meraki API key is entered in the browser, firmware images live in a named volume, and the app runs as-is.
@@ -179,6 +192,7 @@ For switches that use a management VRF, set **Copy VRF** to the management VRF n
 | Method | Path                | Purpose                                            |
 |--------|---------------------|----------------------------------------------------|
 | POST   | `/api/login`        | Validate the browser-supplied Meraki API key and list accessible organizations |
+| GET    | `/api/version`      | App semantic version and Git build SHA            |
 | POST   | `/api/run`          | Start a batch — returns `run_id`                  |
 | GET    | `/api/run/{id}`     | Live job status — frontend polls this             |
 | GET    | `/api/networks`     | Network dropdown for the selected organization, filtered to switch networks |

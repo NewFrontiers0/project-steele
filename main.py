@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field
 
 load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
 
+from app_version import get_build, get_version
 from jobs import FIRMWARE_DIR, store, list_firmware_files
 from meraki_client import MerakiClient, MerakiError
 from discovery import scan_store
@@ -141,6 +142,11 @@ def _check_config():
     firmware_downloads.start_from_env()
 
 
+@app.get("/api/version")
+def version():
+    return {"version": get_version(), "build": get_build()}
+
+
 def _get_api_key(
     x_meraki_api_key: Optional[str] = Header(default=None, alias="X-Meraki-API-Key"),
 ) -> str:
@@ -171,7 +177,7 @@ def login(api_key: str = Depends(_get_api_key)):
     try:
         organizations = MerakiClient(api_key).list_organizations()
     except MerakiError as e:
-        raise HTTPException(status_code=401, detail=str(e))
+        raise HTTPException(status_code=_meraki_error_status(e), detail=str(e))
     if not organizations:
         raise HTTPException(status_code=403, detail="No Meraki organizations are available for this API key")
     return {"ok": True, "organizations": [OrganizationOption(**org) for org in organizations]}
