@@ -1,0 +1,11 @@
+[Unit]
+Description=Update Project Steele from GitHub main
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+Environment=APP_DIR=/opt/project-steele
+Environment=APP_USER=steele
+Environment=SERVICE_NAME=project-steele.service
+ExecStart=/opt/project-steele/deploy/update-from-main.sh

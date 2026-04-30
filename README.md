@@ -73,6 +73,74 @@ docker logs -f catalyst-onboarder
 
 Firmware-download progress and errors are shown in the web UI.
 
+## Ubuntu systemd service
+
+For an always-on Ubuntu VM, run Project Steele with systemd instead of `./run.sh`.
+The service runs uvicorn without `--reload`, and a timer checks GitHub `main`
+every 5 minutes. When `main` changes, the updater pulls the new code, updates
+Python dependencies, and restarts the app.
+
+### 1. Add a deploy key for the private repo
+
+On the Ubuntu VM:
+
+```bash
+sudo useradd --system --create-home --shell /bin/bash steele 2>/dev/null || true
+sudo -u steele mkdir -p /home/steele/.ssh
+sudo -u steele ssh-keygen -t ed25519 -f /home/steele/.ssh/project-steele -C project-steele-deploy
+sudo -u steele cat /home/steele/.ssh/project-steele.pub
+```
+
+In GitHub, open **Settings -> Deploy keys** for `project-steele`, add that public
+key, and leave write access disabled. Then create SSH config for the service user:
+
+```bash
+sudo -u steele tee /home/steele/.ssh/config >/dev/null <<'EOF'
+Host github.com
+  HostName github.com
+  User git
+  IdentityFile /home/steele/.ssh/project-steele
+  IdentitiesOnly yes
+EOF
+sudo chmod 600 /home/steele/.ssh/config
+sudo -u steele ssh -T git@github.com
+```
+
+The final SSH test should identify the GitHub account or repo access. It may say
+shell access is not provided; that is normal.
+
+### 2. Clone and install the service
+
+```bash
+sudo apt-get update
+sudo apt-get install -y git
+sudo mkdir -p /opt/project-steele
+sudo chown steele:steele /opt/project-steele
+sudo -u steele git clone git@github.com:NewFrontiers0/project-steele.git /opt/project-steele
+cd /opt/project-steele
+sudo ./deploy/install-systemd.sh
+```
+
+The app will listen on `http://<vm-ip>:8001`. The installer also enables the
+update timer.
+
+### 3. Operate it
+
+```bash
+sudo systemctl status project-steele.service
+sudo journalctl -u project-steele.service -f
+sudo systemctl restart project-steele.service
+sudo systemctl list-timers project-steele-update.timer
+sudo systemctl start project-steele-update.service
+```
+
+Local runtime settings live in `/opt/project-steele/.env`. Do not commit that file.
+
+The update job refuses to deploy if tracked files on the VM have local edits. That
+keeps accidental server-side changes from being overwritten silently. Commit changes
+through Git branches and merge them to `main`; the VM will pick them up on the next
+timer run.
+
 ### Switch CLI
 
 Use the **CLI** button in the top-right toolbar to open a dedicated SSH command page. Enter the switch IP or hostname, username, password, and one or more CLI commands. The backend uses the same Netmiko IOS-XE SSH wrapper as the onboarding workflow and returns the command output in the page.

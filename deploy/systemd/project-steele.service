@@ -1,0 +1,33 @@
+[Unit]
+Description=Project Steele Meraki Catalyst Onboarder
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=steele
+Group=steele
+WorkingDirectory=/opt/project-steele
+Environment=HOST=0.0.0.0
+Environment=PORT=8001
+Environment=SWIM_FILE_PORT=9000
+Environment=SWIM_FTP_PORT=2121
+Environment=SWIM_FTP_PASSIVE_PORTS=30000-30009
+Environment=SWIM_TFTP_PORT=69
+Environment=SWIM_HTTP_CHUNK_BYTES=512
+Environment=SWIM_HTTP_CHUNK_DELAY_MS=5
+Environment=SWIM_HTTP_INITIAL_DELAY_MS=500
+Environment=SWIM_HTTP_TCP_MAXSEG=536
+Environment=SWIM_HTTP_SNDBUF_BYTES=4096
+EnvironmentFile=-/opt/project-steele/.env
+ExecStart=/opt/project-steele/.venv/bin/uvicorn main:app --host ${HOST} --port ${PORT}
+Restart=always
+RestartSec=5
+
+# Lets the non-root service bind UDP/69 for the TFTP fallback.
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target
