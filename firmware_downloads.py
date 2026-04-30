@@ -16,14 +16,9 @@ from jobs import FIRMWARE_DIR, list_firmware_files
 
 
 CHUNK_SIZE = 1024 * 1024
-DEFAULT_FIRMWARE_BASE_URL = "http://firmware.shelton.digital:8999"
-DEFAULT_FIRMWARE_FILENAMES = (
-    "cat9k_iosxe.17.12.04.SPA.bin",
-    "cat9k_iosxe.17.15.04d.SPA.bin",
-    "cat9k_iosxe.17.18.02.SPA.bin",
-)
 FIRMWARE_LINK_RE = re.compile(r'href=["\']?([^"\'\s>]+)', re.IGNORECASE)
 CAT9K_BIN_RE = re.compile(r"cat9k[^\"'<>\s/]*\.bin", re.IGNORECASE)
+DISABLED_VALUES = {"none", "off", "false", "disabled", "skip"}
 
 
 @dataclass
@@ -46,22 +41,22 @@ class FirmwareDownloadManager:
         self._lock = threading.Lock()
         self._started = False
         self._worker: Optional[threading.Thread] = None
+        self._source_base_urls: List[str] = []
 
     def start_from_env(self):
-        raw = os.environ.get("FIRMWARE_URLS", "")
         if self._downloads_disabled():
             with self._lock:
                 self._started = True
             return
-        configured = [self._normalize_configured_url(url) for url in raw.split() if url.strip()]
+        configured = self._env_configured_urls()
         discovery_bases = self._repository_bases_from_configured(configured)
-        discover_repositories = not configured or bool(discovery_bases)
-        if not configured:
-            discovery_bases = [DEFAULT_FIRMWARE_BASE_URL]
+        discover_repositories = bool(discovery_bases)
         with self._lock:
             if self._started:
                 return
             self._started = True
+            if not configured and not discovery_bases:
+                return
             if discover_repositories:
                 self._queue_discovery_locked(discovery_bases)
             if not discover_repositories:
@@ -73,15 +68,20 @@ class FirmwareDownloadManager:
 
     @staticmethod
     def _downloads_disabled() -> bool:
-        return os.environ.get("FIRMWARE_URLS", "").strip().lower() in {
-            "none", "off", "false", "disabled", "skip"
-        }
+        return os.environ.get("FIRMWARE_URLS", "").strip().lower() in DISABLED_VALUES
+
+    @staticmethod
+    def _env_configured_urls() -> List[str]:
+        raw = os.environ.get("FIRMWARE_URLS", "")
+        if raw.strip().lower() in DISABLED_VALUES:
+            return []
+        return [FirmwareDownloadManager._normalize_configured_url(url) for url in raw.split() if url.strip()]
 
     def _record_discovery_failure(self, error: str, base_urls: Optional[List[str]] = None):
         with self._lock:
             self._started = True
             self._downloads["__discovery__"] = FirmwareDownload(
-                url=", ".join(base_urls or [DEFAULT_FIRMWARE_BASE_URL]),
+                url=", ".join(base_urls or []),
                 filename="Firmware discovery",
                 status="failed",
                 message="Discovery failed",
@@ -89,15 +89,34 @@ class FirmwareDownloadManager:
                 finished_at=time.time(),
             )
 
+    def set_source(self, host: str, port: int, scheme: str = "http"):
+        base_url = self._source_base_url(host, port, scheme)
+        already_discovering = False
+        with self._lock:
+            self._recover_stopped_worker_locked()
+            self._source_base_urls = [base_url]
+            self._started = True
+            current = self._downloads.get("__discovery__")
+            if current and current.status == "downloading":
+                already_discovering = True
+            else:
+                self._queue_discovery_locked([base_url])
+        if not already_discovering:
+            self._ensure_discovery_worker([base_url])
+        return self.serialize()
+
     def rescan(self):
-        raw = os.environ.get("FIRMWARE_URLS", "")
         if self._downloads_disabled():
             return self.serialize()
-        configured = [self._normalize_configured_url(url) for url in raw.split() if url.strip()]
+        configured = self._env_configured_urls()
         discovery_bases = self._repository_bases_from_configured(configured)
-        discover_repositories = not configured or bool(discovery_bases)
         if not configured:
-            discovery_bases = [DEFAULT_FIRMWARE_BASE_URL]
+            with self._lock:
+                discovery_bases = list(self._source_base_urls)
+        discover_repositories = bool(discovery_bases)
+        if not configured and not discovery_bases:
+            return self.serialize()
+        already_discovering = False
         with self._lock:
             self._recover_stopped_worker_locked()
             self._started = True
@@ -106,15 +125,16 @@ class FirmwareDownloadManager:
             else:
                 current = self._downloads.get("__discovery__")
                 if current and current.status == "downloading":
-                    return self.serialize()
-                self._queue_discovery_locked(discovery_bases)
+                    already_discovering = True
+                else:
+                    self._queue_discovery_locked(discovery_bases)
         if not discover_repositories:
             self._ensure_worker()
-        else:
+        elif not already_discovering:
             self._ensure_discovery_worker(discovery_bases)
         return self.serialize()
 
-    def _discover_defaults_and_download(self, base_urls: List[str]):
+    def _discover_and_download(self, base_urls: List[str]):
         try:
             urls = self._discover_repository_urls(base_urls)
         except Exception as e:
@@ -133,19 +153,6 @@ class FirmwareDownloadManager:
             self._downloads.pop("__discovery__", None)
             self._queue_urls_locked(urls)
         self._download_all()
-
-    @staticmethod
-    def _configured_urls() -> List[str]:
-        raw = os.environ.get("FIRMWARE_URLS", "")
-        if raw.strip().lower() in {"none", "off", "false", "disabled", "skip"}:
-            return []
-        configured = [FirmwareDownloadManager._normalize_configured_url(url) for url in raw.split() if url.strip()]
-        discovery_bases = FirmwareDownloadManager._repository_bases_from_configured(configured)
-        if configured and not discovery_bases:
-            return configured
-        return FirmwareDownloadManager._discover_repository_urls(
-            discovery_bases or [DEFAULT_FIRMWARE_BASE_URL]
-        )
 
     @staticmethod
     def _repository_bases_from_configured(urls: List[str]) -> List[str]:
@@ -176,7 +183,6 @@ class FirmwareDownloadManager:
                     html = unescape(response.read().decode("utf-8", errors="replace"))
             except Exception as e:
                 errors.append(f"{index_url}: {e}")
-                urls.update(FirmwareDownloadManager._default_fallback_urls(base_url))
                 continue
 
             for href in FIRMWARE_LINK_RE.findall(html):
@@ -194,8 +200,6 @@ class FirmwareDownloadManager:
                 filename = FirmwareDownloadManager._filename_from_url(token)
                 if FirmwareDownloadManager._is_cat9k_bin(filename):
                     urls.add(urllib.parse.urljoin(index_url, token))
-
-            urls.update(FirmwareDownloadManager._default_fallback_urls(base_url, urls))
 
         if not urls and errors:
             raise RuntimeError("; ".join(errors))
@@ -228,11 +232,17 @@ class FirmwareDownloadManager:
         with self._lock:
             self._recover_stopped_worker_locked()
             downloads = [asdict(d) for d in self._downloads.values()]
+            source_urls = list(self._source_base_urls)
         active = any(d["status"] in {"pending", "downloading"} for d in downloads)
+        env_urls = self._env_configured_urls()
         return {
             "active": active,
             "downloads": downloads,
             "images": list_firmware_files(),
+            "downloads_disabled": self._downloads_disabled(),
+            "env_configured": bool(env_urls),
+            "source_urls": source_urls,
+            "needs_source": not self._downloads_disabled() and not env_urls and not source_urls,
         }
 
     def retry(self, filename: Optional[str] = None, force: bool = False):
@@ -268,8 +278,7 @@ class FirmwareDownloadManager:
             if filename and not matched:
                 raise ValueError(f"Firmware download not found: {filename}")
         if retry_discovery:
-            self.start_from_env()
-            return self.serialize()
+            return self.rescan()
         self._ensure_worker()
         return self.serialize()
 
@@ -286,7 +295,7 @@ class FirmwareDownloadManager:
             if self._worker and self._worker.is_alive():
                 return
             self._worker = threading.Thread(
-                target=self._discover_defaults_and_download,
+                target=self._discover_and_download,
                 args=(base_urls,),
                 name="firmware-discovery",
                 daemon=True,
@@ -403,34 +412,6 @@ class FirmwareDownloadManager:
             download.finished_at = now
 
     @staticmethod
-    def _default_fallback_urls(base_url: str, discovered: Optional[set] = None) -> set:
-        if FirmwareDownloadManager._canonical_base(base_url) != FirmwareDownloadManager._canonical_base(DEFAULT_FIRMWARE_BASE_URL):
-            return set()
-        discovered_names = {
-            FirmwareDownloadManager._filename_from_url(url).lower()
-            for url in (discovered or set())
-        }
-        index_url = DEFAULT_FIRMWARE_BASE_URL.rstrip("/") + "/"
-        return {
-            urllib.parse.urljoin(index_url, filename)
-            for filename in DEFAULT_FIRMWARE_FILENAMES
-            if filename.lower() not in discovered_names
-        }
-
-    @staticmethod
-    def _canonical_base(url: str) -> str:
-        parsed = urllib.parse.urlparse(FirmwareDownloadManager._normalize_configured_url(url))
-        path = parsed.path.rstrip("/")
-        return urllib.parse.urlunparse((
-            parsed.scheme or "http",
-            parsed.netloc.lower(),
-            path,
-            "",
-            "",
-            "",
-        ))
-
-    @staticmethod
     def _remove_firmware_files(filename: str):
         if not filename or filename in {".", "..", "(unknown file)"}:
             return
@@ -450,6 +431,29 @@ class FirmwareDownloadManager:
         if url.startswith("//"):
             return "http:" + url
         return "http://" + url
+
+    @staticmethod
+    def _source_base_url(host: str, port: int, scheme: str = "http") -> str:
+        scheme = (scheme or "http").strip().lower()
+        if scheme not in {"http", "https"}:
+            raise ValueError("Firmware source scheme must be http or https")
+        host = (host or "").strip()
+        if not host:
+            raise ValueError("Enter a firmware source hostname or IP")
+        parsed = urllib.parse.urlparse(host if "://" in host else f"//{host}", scheme=scheme)
+        source_host = parsed.hostname or host
+        source_host = source_host.strip("[]")
+        if not source_host:
+            raise ValueError("Enter a firmware source hostname or IP")
+        try:
+            source_port = int(port or parsed.port)
+        except (TypeError, ValueError):
+            raise ValueError("Enter a valid firmware source port")
+        if source_port < 1 or source_port > 65535:
+            raise ValueError("Firmware source port must be between 1 and 65535")
+        netloc = f"[{source_host}]" if ":" in source_host and not source_host.startswith("[") else source_host
+        netloc = f"{netloc}:{source_port}"
+        return urllib.parse.urlunparse((scheme, netloc, "/", "", "", "")).rstrip("/")
 
     @staticmethod
     def _repository_base_from_url(url: str) -> str:

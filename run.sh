@@ -272,7 +272,7 @@ clear_listen_port "$SWIM_FTP_PORT" "SWIM FTP server"
 clear_udp_port "$SWIM_TFTP_PORT" "SWIM TFTP server"
 ensure_low_port_permission "$SWIM_TFTP_PORT"
 
-echo "==> Firmware downloads use built-in Shelton URLs unless FIRMWARE_URLS is set"
+echo "==> Firmware downloads use the web UI source prompt unless FIRMWARE_URLS is set"
 echo "==> Starting server on http://${HOST}:${PORT}"
 echo "==> SWIM firmware file server will listen on http://${HOST}:${SWIM_FILE_PORT}"
 echo "==> SWIM HTTP stream profile: ${SWIM_HTTP_CHUNK_BYTES}B chunks, ${SWIM_HTTP_CHUNK_DELAY_MS}ms delay, ${SWIM_HTTP_INITIAL_DELAY_MS}ms initial pause"

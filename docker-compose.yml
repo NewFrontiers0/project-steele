@@ -10,7 +10,7 @@ services:
       - "69:69/udp"
       - "30000-30009:30000-30009"
     environment:
-      # Optional override: leave blank to use the built-in Shelton firmware URLs.
+      # Optional unattended startup source. Leave blank to choose in the web UI.
       # Set to "none" to disable automatic firmware downloads.
       # Files are cached in the firmware volume, so subsequent starts skip them.
       FIRMWARE_URLS: "${FIRMWARE_URLS:-}"

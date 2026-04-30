@@ -8,7 +8,7 @@ mkdir -p "$FIRMWARE_DIR"
 
 case "${FIRMWARE_URLS:-}" in
   "")
-    echo "==> No FIRMWARE_URLS override set - using built-in firmware URLs"
+    echo "==> No FIRMWARE_URLS set - choose a firmware source in the web UI"
     ;;
   none|off|false|disabled|skip)
     echo "==> Automatic firmware downloads disabled"

@@ -47,13 +47,13 @@ Then open <http://localhost:8001>.
 docker compose up -d
 ```
 
-Set `FIRMWARE_URLS` only if you want to override the built-in Shelton firmware URLs. Meraki API keys are entered in the browser.
+Leave `FIRMWARE_URLS` blank to choose the firmware source host and port in the web UI. Set it only when you want unattended startup downloads. Meraki API keys are entered in the browser.
 
 ### Firmware images
 
-By default, both `./run.sh` and Docker discover firmware images from `http://firmware.shelton.digital:8999/`. Any listed or linked filename that starts with `cat9k` and ends with `.bin` is queued for download.
+Open **Firmware downloads** in the top-right toolbar, enter the HTTP hostname/IP and port that lists your firmware files, then click **Find firmware**. Any listed or linked filename that starts with `cat9k` and ends with `.bin` is queued for download.
 
-`FIRMWARE_URLS` is an optional space-separated override. Set it to `none` to disable automatic firmware downloads. If it contains a repository URL or a legacy URL to a `cat9k*.bin` file, the app scans that repository and queues every matching `cat9k*.bin` image. If the default Shelton repository listing is unavailable or incomplete, the app still queues the three expected Shelton images. On server startup, the FastAPI app checks each image against the firmware folder or volume; if the file already exists with non-zero size it's skipped, otherwise it's downloaded in the background and shown in the top-right firmware downloads panel. The Docker named volume persists across restarts so you pay the multi-GB download cost once per image version.
+`FIRMWARE_URLS` is an optional space-separated unattended startup source. Set it to `none` to disable automatic firmware downloads. If it contains a repository URL or a legacy URL to a `cat9k*.bin` file, the app scans that repository and queues every matching `cat9k*.bin` image. On server startup, the FastAPI app checks each image against the firmware folder or volume; if the file already exists with non-zero size it's skipped, otherwise it's downloaded in the background and shown in the top-right firmware downloads panel. The Docker named volume persists across restarts so you pay the multi-GB download cost once per image version.
 
 If you'd rather populate the volume another way, set `FIRMWARE_URLS=none` and use `docker cp` or pre-seed via a bind mount.
 
@@ -63,7 +63,7 @@ Failed downloads can be retried from the firmware downloads panel. Completed or 
 
 ### Network reachability
 
-The container needs to reach both the internet (for `api.meraki.com`) and your switch management network. On Linux with `--network host` both work without config. On Docker Desktop (macOS/Windows), the default bridge network's NAT usually handles it — verify with `docker exec catalyst-onboarder ping 10.1.1.53`.
+The container needs to reach both the internet (for `api.meraki.com`) and your switch management network. On Linux with `--network host` both work without config. On Docker Desktop (macOS/Windows), the default bridge network's NAT usually handles it; verify with `docker exec catalyst-onboarder ping <switch-management-ip>`.
 
 ### Logs
 
@@ -183,6 +183,7 @@ For switches that use a management VRF, set **Copy VRF** to the management VRF n
 | GET    | `/api/run/{id}`     | Live job status — frontend polls this             |
 | GET    | `/api/networks`     | Network dropdown for the selected organization, filtered to switch networks |
 | GET    | `/api/firmware/downloads` | Firmware URL download status for the top-right panel |
+| POST   | `/api/firmware/downloads/source` | Set the firmware repository host and port from the web UI |
 | POST   | `/api/firmware/downloads/retry` | Retry failed firmware downloads, or restart one file with `force: true` |
 | POST   | `/api/firmware/downloads/rescan` | Rescan the firmware repository for cat9k*.bin files |
 | POST   | `/api/cli/run`     | Run CLI command(s) on a switch over SSH             |

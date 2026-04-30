@@ -56,7 +56,7 @@ def _firmware_chunks(path: str):
 
 
 class ScanRequest(BaseModel):
-    subnet: str = Field(..., examples=["10.1.1.0/24"])
+    subnet: str = Field(..., examples=["192.0.2.0/24"])
     username: str
     password: str
     secret: Optional[str] = None
@@ -83,6 +83,12 @@ class UpgradeRequest(BaseModel):
 class FirmwareRetryRequest(BaseModel):
     filename: Optional[str] = None
     force: bool = False
+
+
+class FirmwareSourceRequest(BaseModel):
+    host: str = Field(..., min_length=1, max_length=255)
+    port: int = Field(..., ge=1, le=65535)
+    scheme: Literal["http", "https"] = "http"
 
 
 class CliCommandRequest(BaseModel):
@@ -280,6 +286,14 @@ def retry_firmware_downloads(req: FirmwareRetryRequest):
 @app.post("/api/firmware/downloads/rescan")
 def rescan_firmware_downloads():
     return firmware_downloads.rescan()
+
+
+@app.post("/api/firmware/downloads/source")
+def set_firmware_download_source(req: FirmwareSourceRequest):
+    try:
+        return firmware_downloads.set_source(req.host, req.port, req.scheme)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @app.post("/api/cli/run")
