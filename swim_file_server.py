@@ -34,17 +34,17 @@ HTTP_PROFILES = {
         "send_buffer_bytes": 4096,
         "tcp_notsent_lowat": 0,
     },
-    # Faster default: gently start the switch client, then rely on TCP pacing.
+    # Faster default: gently start the switch client, then open up the stream.
     "balanced": {
         "chunk_bytes": 512,
         "chunk_delay_ms": 1.0,
-        "accelerate_after_bytes": 256 * 1024,
-        "accelerated_chunk_bytes": 8192,
+        "accelerate_after_bytes": 64 * 1024,
+        "accelerated_chunk_bytes": 64 * 1024,
         "accelerated_chunk_delay_ms": 0.0,
-        "initial_delay_ms": 100.0,
-        "tcp_maxseg": 536,
-        "send_buffer_bytes": 8192,
-        "tcp_notsent_lowat": 4096,
+        "initial_delay_ms": 50.0,
+        "tcp_maxseg": 1460,
+        "send_buffer_bytes": 131072,
+        "tcp_notsent_lowat": 32768,
     },
     # Lab-only option for clean networks and switches that tolerate faster bursts.
     "fast": {
