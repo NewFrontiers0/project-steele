@@ -1189,6 +1189,17 @@ class SwitchClient:
                             L(f"install: {clean}")
 
                     lower_tail = output[-5000:].lower()
+                    if (
+                        "package verification fail" in lower_tail
+                        and source_arg.lower().startswith(("http:", "https:"))
+                    ):
+                        raise SwitchError(
+                            "Install package verification failed after remote HTTP download. "
+                            "The image may be incompatible/corrupt, or the HTTP stream profile "
+                            "may still be too aggressive for this switch. Retry once with the "
+                            "updated balanced profile; if it repeats, set SWIM_HTTP_PROFILE=safe "
+                            f"and retry. Tail:\n{output[-1200:]}"
+                        )
                     if self._install_output_has_failure(lower_tail):
                         raise SwitchError(
                             f"Install command reported an error: {output[-1200:]}")
