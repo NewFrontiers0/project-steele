@@ -368,6 +368,48 @@ class SwitchClient:
         except Exception as e:
             raise SwitchError(f"fsck flash: failed: {e}") from e
 
+    def save_running_config(self, on_log=None):
+        """Save running-config before IOS-XE install commands."""
+        def L(msg):
+            if on_log:
+                on_log(msg)
+
+        cmd = "copy running-config startup-config"
+        try:
+            out = self.conn.send_command_timing(
+                cmd,
+                read_timeout=180,
+                strip_prompt=False,
+                strip_command=False,
+            )
+            lower = out.lower()
+            for _ in range(6):
+                if (
+                    "destination filename" in lower
+                    or "[startup-config]" in lower
+                    or "[confirm]" in lower
+                    or "confirm" in lower
+                    or "overwrite" in lower
+                ):
+                    out += self.conn.send_command_timing(
+                        "",
+                        read_timeout=180,
+                        strip_prompt=False,
+                        strip_command=False,
+                    )
+                    lower = out.lower()
+                    continue
+                break
+        except Exception as e:
+            raise SwitchError(f"Could not save running-config: {e}") from e
+
+        tail = out.strip()[-500:]
+        L(f"Save config output: {tail or '(empty)'}")
+        lower = out.lower()
+        if "% invalid" in lower or "% error" in lower or "failed" in lower:
+            raise SwitchError(f"Could not save running-config: {tail}")
+        return out
+
     def copy_image_from_http_to_flash(self, image_filename, source_url,
                                       expected_size=None, copy_vrf=None,
                                       source_interface=None,
@@ -928,7 +970,9 @@ class SwitchClient:
         except Exception as e:
             raise SwitchError(f"install remove inactive failed: {e}") from e
 
-    def install_add_activate_commit_fire_and_forget(self, image_filename, source_interface=None):
+    def install_add_activate_commit_fire_and_forget(self, image_filename,
+                                                    source_interface=None,
+                                                    on_log=None):
         """
         Send 'install add file X activate commit prompt-level none' over the
         paramiko channel WITHOUT waiting for the command to return.
@@ -946,16 +990,25 @@ class SwitchClient:
         if not re.match(r"^[A-Za-z][A-Za-z0-9+.-]*:", source_arg):
             source_arg = f"flash:{image_filename}"
 
+        def L(msg):
+            if on_log:
+                on_log(msg)
+
         source_interface = (source_interface or "").strip()
         if source_interface and source_arg.lower().startswith(("http:", "https:")):
+            L(f"Configuring HTTP source-interface {source_interface}")
             try:
-                self.conn.send_config_set(
+                out = self.conn.send_config_set(
                     [f"ip http client source-interface {source_interface}"],
                     read_timeout=30,
                 )
+                L(f"  output: {out.strip()[-240:]}")
             except Exception as e:
                 raise SwitchError(
                     f"Could not configure HTTP source-interface {source_interface}: {e}") from e
+
+        L("Saving running-config before install command")
+        self.save_running_config(on_log=L)
 
         cmd = (f"install add file {source_arg} "
                f"activate commit prompt-level none\n")
@@ -1094,6 +1147,9 @@ class SwitchClient:
             except Exception as e:
                 raise SwitchError(
                     f"Could not configure HTTP source-interface {source_interface}: {e}") from e
+
+        L("Saving running-config before install command")
+        self.save_running_config(on_log=L)
 
         try:
             prompt = self.conn.find_prompt().strip()

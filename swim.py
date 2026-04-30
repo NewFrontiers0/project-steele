@@ -523,7 +523,10 @@ class SwimStore:
 
                     self._set_progress(job_id, 66, "Starting install add/activate/commit")
                     self._log(job_id, f"Running: install add file flash:{image_filename} activate commit prompt-level none")
-                    fire_out = sw.install_add_activate_commit_fire_and_forget(image_filename)
+                    fire_out = sw.install_add_activate_commit_fire_and_forget(
+                        image_filename,
+                        on_log=switch_log,
+                    )
                     self._log(job_id, fire_out)
 
             self._set_stage(job_id, "reloading", "Install command sent, monitoring reload")
