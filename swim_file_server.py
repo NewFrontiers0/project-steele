@@ -20,6 +20,33 @@ from jobs import FIRMWARE_DIR, list_firmware_files
 
 
 DEFAULT_SWIM_FILE_PORT = 9000
+DEFAULT_HTTP_PROFILE = "balanced"
+HTTP_PROFILES = {
+    # Original Proxmox/Catalyst workaround. Very reliable, very slow.
+    "safe": {
+        "chunk_bytes": 512,
+        "chunk_delay_ms": 5.0,
+        "initial_delay_ms": 500.0,
+        "tcp_maxseg": 536,
+        "send_buffer_bytes": 4096,
+    },
+    # Faster default that still keeps reduced MSS and paced writes.
+    "balanced": {
+        "chunk_bytes": 4096,
+        "chunk_delay_ms": 1.0,
+        "initial_delay_ms": 250.0,
+        "tcp_maxseg": 536,
+        "send_buffer_bytes": 16384,
+    },
+    # Lab-only option for clean networks and switches that tolerate faster bursts.
+    "fast": {
+        "chunk_bytes": 16384,
+        "chunk_delay_ms": 0.0,
+        "initial_delay_ms": 100.0,
+        "tcp_maxseg": 1460,
+        "send_buffer_bytes": 65536,
+    },
+}
 
 _server = None
 _server_port: Optional[int] = None
@@ -47,13 +74,22 @@ def _env_float_ms(name: str, default_ms: float, minimum_ms: float, maximum_ms: f
 
 
 def http_streaming_profile() -> dict:
-    """Return the cautious HTTP streaming profile used for IOS-XE pulls."""
+    """Return the HTTP streaming profile used for IOS-XE pulls."""
+    raw_profile = os.environ.get("SWIM_HTTP_PROFILE", DEFAULT_HTTP_PROFILE).strip().lower()
+    profile_name = raw_profile if raw_profile in HTTP_PROFILES or raw_profile == "custom" else DEFAULT_HTTP_PROFILE
+    defaults = HTTP_PROFILES.get(profile_name, HTTP_PROFILES[DEFAULT_HTTP_PROFILE])
+    if profile_name == "custom":
+        return {
+            "profile": profile_name,
+            "chunk_bytes": _env_int("SWIM_HTTP_CHUNK_BYTES", defaults["chunk_bytes"], 256, 1024 * 1024),
+            "chunk_delay_ms": _env_float_ms("SWIM_HTTP_CHUNK_DELAY_MS", defaults["chunk_delay_ms"], 0.0, 1000.0) * 1000,
+            "initial_delay_ms": _env_float_ms("SWIM_HTTP_INITIAL_DELAY_MS", defaults["initial_delay_ms"], 0.0, 5000.0) * 1000,
+            "tcp_maxseg": _env_int("SWIM_HTTP_TCP_MAXSEG", defaults["tcp_maxseg"], 536, 8960),
+            "send_buffer_bytes": _env_int("SWIM_HTTP_SNDBUF_BYTES", defaults["send_buffer_bytes"], 2048, 1024 * 1024),
+        }
     return {
-        "chunk_bytes": _env_int("SWIM_HTTP_CHUNK_BYTES", 512, 256, 64 * 1024),
-        "chunk_delay_ms": _env_float_ms("SWIM_HTTP_CHUNK_DELAY_MS", 5.0, 0.0, 1000.0) * 1000,
-        "initial_delay_ms": _env_float_ms("SWIM_HTTP_INITIAL_DELAY_MS", 500.0, 0.0, 5000.0) * 1000,
-        "tcp_maxseg": _env_int("SWIM_HTTP_TCP_MAXSEG", 536, 536, 8960),
-        "send_buffer_bytes": _env_int("SWIM_HTTP_SNDBUF_BYTES", 4096, 2048, 1024 * 1024),
+        "profile": profile_name,
+        **defaults,
     }
 
 
@@ -217,7 +253,8 @@ class _SwimFirmwareHandler(BaseHTTPRequestHandler):
             (
                 f"chunk={chunk_bytes}B delay={profile['chunk_delay_ms']:.1f}ms "
                 f"initial_delay={profile['initial_delay_ms']:.1f}ms "
-                f"tcp_maxseg={profile['tcp_maxseg']} sndbuf={profile['send_buffer_bytes']}B"
+                f"tcp_maxseg={profile['tcp_maxseg']} sndbuf={profile['send_buffer_bytes']}B "
+                f"profile={profile['profile']}"
             ),
         )
         if initial_delay > 0:
@@ -310,7 +347,7 @@ def ensure_swim_file_server(on_log=None) -> int:
             profile = http_streaming_profile()
             on_log(
                 "HTTP stream profile: "
-                f"{profile['chunk_bytes']}B chunks, "
+                f"{profile['profile']} / {profile['chunk_bytes']}B chunks, "
                 f"{profile['chunk_delay_ms']:.1f}ms delay, "
                 f"{profile['initial_delay_ms']:.1f}ms initial pause, "
                 f"TCP_MAXSEG {profile['tcp_maxseg']}, "

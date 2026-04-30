@@ -14,11 +14,12 @@ Environment=SWIM_FILE_PORT=9000
 Environment=SWIM_FTP_PORT=2121
 Environment=SWIM_FTP_PASSIVE_PORTS=30000-30009
 Environment=SWIM_TFTP_PORT=69
-Environment=SWIM_HTTP_CHUNK_BYTES=512
-Environment=SWIM_HTTP_CHUNK_DELAY_MS=5
-Environment=SWIM_HTTP_INITIAL_DELAY_MS=500
+Environment=SWIM_HTTP_PROFILE=balanced
+Environment=SWIM_HTTP_CHUNK_BYTES=4096
+Environment=SWIM_HTTP_CHUNK_DELAY_MS=1
+Environment=SWIM_HTTP_INITIAL_DELAY_MS=250
 Environment=SWIM_HTTP_TCP_MAXSEG=536
-Environment=SWIM_HTTP_SNDBUF_BYTES=4096
+Environment=SWIM_HTTP_SNDBUF_BYTES=16384
 EnvironmentFile=-/opt/project-steele/.env
 ExecStart=/opt/project-steele/.venv/bin/uvicorn main:app --host ${HOST} --port ${PORT}
 Restart=always

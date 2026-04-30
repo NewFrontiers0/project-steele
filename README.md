@@ -91,7 +91,7 @@ Firmware-download progress and errors are shown in the web UI.
 For an always-on Ubuntu VM, run Project Steele with systemd instead of `./run.sh`.
 The service runs uvicorn without `--reload`, and a timer checks GitHub `main`
 every 5 minutes. When `main` changes, the updater pulls the new code, updates
-Python dependencies, and restarts the app.
+Python dependencies, refreshes the systemd unit files, and restarts the app.
 
 ### 1. Add a deploy key for the private repo
 
@@ -164,7 +164,7 @@ Use the **SWIM** button in the top-right toolbar for single-switch firmware mana
 
 SWIM now defaults to **Direct install HTTP** because HTTP/FTP/SCP copies to `flash:` can fail after the first data window on some IOS-XE switches. Direct install sends `install add file http://...` first, then `install activate commit prompt-level none` after the add phase succeeds, letting the IOS-XE install subsystem pull and process the remote image instead of staging the whole `.bin` with a separate copy command first. TFTP, SCP, FTP active/passive, and HTTP copy remain selectable fallbacks. TFTP uses UDP/69, FTP uses TCP/2121 for control, passive FTP uses TCP/30000-30009 by default, and HTTP uses TCP/9000 by default with byte-range support for IOS-XE download clients.
 
-HTTP firmware serving uses conservative paced streaming by default: 512-byte chunks, a 5 ms delay between chunks, a 500 ms pause after response headers, a small TCP send buffer, and TCP_MAXSEG where the OS supports it. The dedicated SWIM HTTP server applies TCP_MAXSEG on the listening socket before the TCP handshake so the switch should see a reduced MSS in the SYN-ACK. This slow profile matches Catalyst clients that can download from a deliberately paced Python HTTP server but fail when a VM sends the firmware body in a fast burst. Override with `SWIM_HTTP_CHUNK_BYTES`, `SWIM_HTTP_CHUNK_DELAY_MS`, `SWIM_HTTP_INITIAL_DELAY_MS`, `SWIM_HTTP_TCP_MAXSEG`, and `SWIM_HTTP_SNDBUF_BYTES` if you need to tune throughput.
+HTTP firmware serving uses a named streaming profile. The default `balanced` profile sends 4096-byte chunks with a 1 ms delay, a 250 ms pause after response headers, reduced TCP_MAXSEG, and a modest TCP send buffer. This is much faster than the original compatibility workaround while still avoiding a full-speed VM burst. If a switch regresses, set `SWIM_HTTP_PROFILE=safe` in `/opt/project-steele/.env` to roll back to the original 512-byte / 5 ms profile, then restart the service. Use `SWIM_HTTP_PROFILE=fast` only on clean lab networks. Use `SWIM_HTTP_PROFILE=custom` if you want `SWIM_HTTP_CHUNK_BYTES`, `SWIM_HTTP_CHUNK_DELAY_MS`, `SWIM_HTTP_INITIAL_DELAY_MS`, `SWIM_HTTP_TCP_MAXSEG`, and `SWIM_HTTP_SNDBUF_BYTES` to be read directly.
 
 During TFTP, SCP, FTP, and direct HTTP transfers, the app logs byte progress and updates the SWIM progress bar while the image is transferring. Direct install keeps the SSH command session attached and streams IOS-XE install output until the reload starts or the command fails. If FTP starts but no bytes move for 5 minutes, SWIM aborts the stalled copy so the job can fail cleanly instead of hanging indefinitely.
 

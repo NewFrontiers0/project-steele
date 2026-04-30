@@ -40,5 +40,12 @@ fi
 run_as_app_user .venv/bin/python -m pip install --quiet --upgrade pip
 run_as_app_user .venv/bin/python -m pip install --quiet -r requirements.txt
 
+if [ "$(id -u)" = "0" ] && command -v systemctl >/dev/null 2>&1; then
+  install -m 0644 deploy/systemd/project-steele.service /etc/systemd/system/project-steele.service
+  install -m 0644 deploy/systemd/project-steele-update.service /etc/systemd/system/project-steele-update.service
+  install -m 0644 deploy/systemd/project-steele-update.timer /etc/systemd/system/project-steele-update.timer
+  systemctl daemon-reload
+fi
+
 systemctl restart "$SERVICE_NAME"
 echo "Project Steele updated and $SERVICE_NAME restarted."
