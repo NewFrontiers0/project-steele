@@ -26,25 +26,37 @@ HTTP_PROFILES = {
     "safe": {
         "chunk_bytes": 512,
         "chunk_delay_ms": 5.0,
+        "accelerate_after_bytes": 0,
+        "accelerated_chunk_bytes": 512,
+        "accelerated_chunk_delay_ms": 5.0,
         "initial_delay_ms": 500.0,
         "tcp_maxseg": 536,
         "send_buffer_bytes": 4096,
+        "tcp_notsent_lowat": 0,
     },
-    # Faster default that still keeps reduced MSS and paced writes.
+    # Faster default: gently start the switch client, then rely on TCP pacing.
     "balanced": {
-        "chunk_bytes": 4096,
+        "chunk_bytes": 512,
         "chunk_delay_ms": 1.0,
-        "initial_delay_ms": 250.0,
+        "accelerate_after_bytes": 256 * 1024,
+        "accelerated_chunk_bytes": 8192,
+        "accelerated_chunk_delay_ms": 0.0,
+        "initial_delay_ms": 100.0,
         "tcp_maxseg": 536,
-        "send_buffer_bytes": 16384,
+        "send_buffer_bytes": 8192,
+        "tcp_notsent_lowat": 4096,
     },
     # Lab-only option for clean networks and switches that tolerate faster bursts.
     "fast": {
         "chunk_bytes": 16384,
         "chunk_delay_ms": 0.0,
+        "accelerate_after_bytes": 0,
+        "accelerated_chunk_bytes": 16384,
+        "accelerated_chunk_delay_ms": 0.0,
         "initial_delay_ms": 100.0,
         "tcp_maxseg": 1460,
         "send_buffer_bytes": 65536,
+        "tcp_notsent_lowat": 16384,
     },
 }
 
@@ -83,9 +95,28 @@ def http_streaming_profile() -> dict:
             "profile": profile_name,
             "chunk_bytes": _env_int("SWIM_HTTP_CHUNK_BYTES", defaults["chunk_bytes"], 256, 1024 * 1024),
             "chunk_delay_ms": _env_float_ms("SWIM_HTTP_CHUNK_DELAY_MS", defaults["chunk_delay_ms"], 0.0, 1000.0) * 1000,
+            "accelerate_after_bytes": _env_int(
+                "SWIM_HTTP_ACCELERATE_AFTER_BYTES",
+                defaults["accelerate_after_bytes"],
+                0,
+                1024 * 1024 * 1024,
+            ),
+            "accelerated_chunk_bytes": _env_int(
+                "SWIM_HTTP_ACCELERATED_CHUNK_BYTES",
+                defaults["accelerated_chunk_bytes"],
+                256,
+                1024 * 1024,
+            ),
+            "accelerated_chunk_delay_ms": _env_float_ms(
+                "SWIM_HTTP_ACCELERATED_CHUNK_DELAY_MS",
+                defaults["accelerated_chunk_delay_ms"],
+                0.0,
+                1000.0,
+            ) * 1000,
             "initial_delay_ms": _env_float_ms("SWIM_HTTP_INITIAL_DELAY_MS", defaults["initial_delay_ms"], 0.0, 5000.0) * 1000,
             "tcp_maxseg": _env_int("SWIM_HTTP_TCP_MAXSEG", defaults["tcp_maxseg"], 536, 8960),
             "send_buffer_bytes": _env_int("SWIM_HTTP_SNDBUF_BYTES", defaults["send_buffer_bytes"], 2048, 1024 * 1024),
+            "tcp_notsent_lowat": _env_int("SWIM_HTTP_TCP_NOTSENT_LOWAT", defaults["tcp_notsent_lowat"], 0, 1024 * 1024),
         }
     return {
         "profile": profile_name,
@@ -140,6 +171,11 @@ class _ReusableThreadingHTTPServer(ThreadingHTTPServer):
                 self.socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_MAXSEG, profile["tcp_maxseg"])
             except OSError:
                 pass
+        if hasattr(socket, "TCP_NOTSENT_LOWAT") and profile["tcp_notsent_lowat"] > 0:
+            try:
+                self.socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_NOTSENT_LOWAT, profile["tcp_notsent_lowat"])
+            except OSError:
+                pass
         super().server_bind()
 
 
@@ -161,6 +197,11 @@ class _SwimFirmwareHandler(BaseHTTPRequestHandler):
         if hasattr(socket, "TCP_MAXSEG"):
             try:
                 self.connection.setsockopt(socket.IPPROTO_TCP, socket.TCP_MAXSEG, profile["tcp_maxseg"])
+            except OSError:
+                pass
+        if hasattr(socket, "TCP_NOTSENT_LOWAT") and profile["tcp_notsent_lowat"] > 0:
+            try:
+                self.connection.setsockopt(socket.IPPROTO_TCP, socket.TCP_NOTSENT_LOWAT, profile["tcp_notsent_lowat"])
             except OSError:
                 pass
 
@@ -242,8 +283,11 @@ class _SwimFirmwareHandler(BaseHTTPRequestHandler):
             return
 
         profile = http_streaming_profile()
-        chunk_bytes = profile["chunk_bytes"]
-        chunk_delay = profile["chunk_delay_ms"] / 1000
+        base_chunk_bytes = profile["chunk_bytes"]
+        base_chunk_delay = profile["chunk_delay_ms"] / 1000
+        accelerate_after = profile["accelerate_after_bytes"]
+        fast_chunk_bytes = profile["accelerated_chunk_bytes"]
+        fast_chunk_delay = profile["accelerated_chunk_delay_ms"] / 1000
         initial_delay = profile["initial_delay_ms"] / 1000
         _emit_progress(
             filename,
@@ -251,9 +295,13 @@ class _SwimFirmwareHandler(BaseHTTPRequestHandler):
             size,
             "profile",
             (
-                f"chunk={chunk_bytes}B delay={profile['chunk_delay_ms']:.1f}ms "
+                f"chunk={base_chunk_bytes}B delay={profile['chunk_delay_ms']:.1f}ms "
+                f"accelerate_after={accelerate_after}B "
+                f"fast_chunk={fast_chunk_bytes}B "
+                f"fast_delay={profile['accelerated_chunk_delay_ms']:.1f}ms "
                 f"initial_delay={profile['initial_delay_ms']:.1f}ms "
                 f"tcp_maxseg={profile['tcp_maxseg']} sndbuf={profile['send_buffer_bytes']}B "
+                f"notsent_lowat={profile['tcp_notsent_lowat']}B "
                 f"profile={profile['profile']}"
             ),
         )
@@ -265,6 +313,9 @@ class _SwimFirmwareHandler(BaseHTTPRequestHandler):
         with open(path, "rb") as fh:
             fh.seek(start)
             while sent < length:
+                accelerated = accelerate_after > 0 and sent >= accelerate_after
+                chunk_bytes = fast_chunk_bytes if accelerated else base_chunk_bytes
+                chunk_delay = fast_chunk_delay if accelerated else base_chunk_delay
                 chunk = fh.read(min(chunk_bytes, length - sent))
                 if not chunk:
                     break
@@ -279,6 +330,14 @@ class _SwimFirmwareHandler(BaseHTTPRequestHandler):
                 if now - last_emit >= 1.0 or sent >= length:
                     last_emit = now
                     _emit_progress(filename, start + sent, size, "progress", detail)
+                if sent == accelerate_after and fast_chunk_delay < base_chunk_delay:
+                    _emit_progress(
+                        filename,
+                        start + sent,
+                        size,
+                        "profile",
+                        f"accelerated HTTP stream after {accelerate_after} bytes",
+                    )
                 if chunk_delay > 0:
                     time.sleep(chunk_delay)
         event = "complete" if sent >= length else "closed"
@@ -349,9 +408,13 @@ def ensure_swim_file_server(on_log=None) -> int:
                 "HTTP stream profile: "
                 f"{profile['profile']} / {profile['chunk_bytes']}B chunks, "
                 f"{profile['chunk_delay_ms']:.1f}ms delay, "
+                f"accelerates after {profile['accelerate_after_bytes']}B to "
+                f"{profile['accelerated_chunk_bytes']}B chunks / "
+                f"{profile['accelerated_chunk_delay_ms']:.1f}ms delay, "
                 f"{profile['initial_delay_ms']:.1f}ms initial pause, "
                 f"TCP_MAXSEG {profile['tcp_maxseg']}, "
-                f"SO_SNDBUF {profile['send_buffer_bytes']}B"
+                f"SO_SNDBUF {profile['send_buffer_bytes']}B, "
+                f"TCP_NOTSENT_LOWAT {profile['tcp_notsent_lowat']}B"
             )
         return port
 
