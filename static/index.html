@@ -27,6 +27,7 @@
   button.primary { background:#1f6feb; border:1px solid #1858c4; color:#fff; padding:9px 18px; border-radius:6px; font-size:13px; font-weight:500; cursor:pointer; font-family:inherit; }
   button.primary:disabled { background:#9ab8e8; border-color:#9ab8e8; cursor:not-allowed; }
   button.secondary { background:#fff; border:1px solid #c4ccd5; color:#1a2433; padding:7px 14px; border-radius:6px; font-size:12px; cursor:pointer; font-family:inherit; }
+  button.secondary:disabled { color:#8896a8; background:#f5f7f9; cursor:not-allowed; }
   button.link { background:none; border:none; color:#b3261e; cursor:pointer; font-size:12px; padding:0; }
   table { width:100%; border-collapse:collapse; font-size:13px; }
   th { text-align:left; padding:10px 12px; border-bottom:1px solid #e3e7ec; color:#5a6878; font-weight:500; font-size:12px; text-transform:uppercase; letter-spacing:0.3px; }
@@ -327,7 +328,10 @@
   </div>
 
   <div class="card">
-    <h2>Status</h2>
+    <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:14px;">
+      <h2 style="margin:0;">Status</h2>
+      <button class="secondary" id="btnSwimDownloadLog" disabled>Download logs</button>
+    </div>
     <div style="display:flex; justify-content:space-between; gap:12px; font-size:13px; margin-bottom:6px;">
       <span id="swimStatus" style="color:#5a6878;">No SWIM job running.</span>
       <span id="swimProgressText" style="color:#0e2747; font-weight:500;">0%</span>
@@ -345,6 +349,7 @@ let pollTimer = null;
 let firmwareDownloadPoll = null;
 let swimPollTimer = null;
 let swimJobId = null;
+let lastSwimJob = null;
 let firmwareDownloadsDismissed = false;
 let firmwareDownloadsPinnedOpen = false;
 let runId = null;
@@ -592,6 +597,7 @@ async function loadSwimImages() {
 }
 
 function renderSwimJob(job) {
+  lastSwimJob = job;
   const statusText = job.progress_message || job.stage || job.status;
   $('swimStatus').textContent = `${job.status.toUpperCase()} - ${statusText}`;
   $('swimProgressText').textContent = `${job.progress || 0}%`;
@@ -601,7 +607,35 @@ function renderSwimJob(job) {
     ? job.log.join('\n')
     : 'SWIM job started...';
   $('swimLog').scrollTop = $('swimLog').scrollHeight;
+  $('btnSwimDownloadLog').disabled = !($('swimLog').textContent || '').trim();
   if (job.error) showSwimErr(job.error);
+}
+
+function downloadSwimLog() {
+  const text = ($('swimLog').textContent || '').trim();
+  if (!text) return;
+  const host = lastSwimJob && lastSwimJob.host ? lastSwimJob.host : $('swimHost').value.trim() || 'switch';
+  const jobId = lastSwimJob && lastSwimJob.id ? lastSwimJob.id : 'swim';
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const filename = `project-steele-swim-${jobId}-${host}-${stamp}.log`.replace(/[^A-Za-z0-9._-]/g, '_');
+  const body = [
+    'project-steele SWIM log',
+    `Job: ${jobId}`,
+    `Switch: ${host}`,
+    `Downloaded: ${new Date().toISOString()}`,
+    '',
+    text,
+    '',
+  ].join('\n');
+  const blob = new Blob([body], { type: 'text/plain;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
 }
 
 async function pollSwimJob() {
@@ -642,6 +676,7 @@ async function startSwimUpgrade() {
   $('swimProgressBar').style.width = '0%';
   $('swimProgressBar').style.background = '#1f6feb';
   $('swimLog').textContent = 'Starting SWIM upgrade...';
+  $('btnSwimDownloadLog').disabled = false;
   try {
     const job = await api('/api/swim/upgrade', {
       host,
@@ -863,6 +898,7 @@ $('cliBack').addEventListener('click', showMainPage);
 $('swimBack').addEventListener('click', showMainPage);
 $('btnCliRun').addEventListener('click', runCliCommand);
 $('btnSwimStart').addEventListener('click', startSwimUpgrade);
+$('btnSwimDownloadLog').addEventListener('click', downloadSwimLog);
 $('cliCommand').addEventListener('keydown', (e) => {
   if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') runCliCommand();
 });

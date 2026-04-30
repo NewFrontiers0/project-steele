@@ -1090,19 +1090,36 @@ class SwitchClient:
 
     def install_activate_commit_watch(self, on_log=None, on_progress=None,
                                       watch_timeout=7200):
-        """Activate the staged package set and commit the install."""
-        cmd = "install activate commit prompt-level none"
-        return self._watch_install_command(
-            cmd,
-            on_log=on_log,
-            on_progress=on_progress,
-            watch_timeout=watch_timeout,
-            progress_start=60,
-            progress_end=68,
-            progress_message="Install activate/commit in progress",
-            done_hint="install_activate",
-            expect_reload=True,
+        """Activate the staged package set, adapting to IOS-XE syntax."""
+        candidates = (
+            ("install activate commit prompt-level none", "Install activate/commit in progress"),
+            ("install activate prompt-level none", "Install activate in progress"),
+            ("install activate", "Install activate in progress"),
         )
+        last_error = None
+        for idx, (cmd, message) in enumerate(candidates):
+            try:
+                return self._watch_install_command(
+                    cmd,
+                    on_log=on_log,
+                    on_progress=on_progress,
+                    watch_timeout=watch_timeout,
+                    progress_start=60,
+                    progress_end=68,
+                    progress_message=message,
+                    done_hint="install_activate",
+                    expect_reload=True,
+                )
+            except SwitchError as e:
+                last_error = e
+                if "invalid input" not in str(e).lower() or idx == len(candidates) - 1:
+                    raise
+                if on_log:
+                    on_log(
+                        "Activation command syntax was rejected; trying fallback: "
+                        f"{candidates[idx + 1][0]}"
+                    )
+        raise last_error or SwitchError("Install activate failed")
 
     def install_diagnostics(self):
         """Collect install-related output after a failure."""
@@ -1207,7 +1224,8 @@ class SwitchClient:
                     if (
                         not answered_prompt
                         and ("[y/n]" in lower_tail or "proceed" in lower_tail
-                             or "continue" in lower_tail)
+                             or "continue" in lower_tail or "[y/n/q]" in lower_tail
+                             or "yes/no" in lower_tail)
                     ):
                         L("install: answering confirmation prompt")
                         channel.send("y\n")
