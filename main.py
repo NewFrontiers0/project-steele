@@ -79,6 +79,7 @@ class CreateRunRequest(BaseModel):
 
 class UpgradeRequest(BaseModel):
     image_filename: str
+    app_base_url: Optional[str] = Field(default=None, max_length=2048)
 
 
 class FirmwareRetryRequest(BaseModel):
@@ -230,7 +231,7 @@ def trigger_upgrade(
 ):
     if req.image_filename not in list_firmware_files():
         raise HTTPException(status_code=400, detail="Image not in firmware folder")
-    store.run_upgrade_stage(_get_run(run_id, api_key, org_id), req.image_filename)
+    store.run_upgrade_stage(_get_run(run_id, api_key, org_id), req.image_filename, req.app_base_url)
     return {"started": True}
 
 

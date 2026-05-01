@@ -1183,7 +1183,10 @@ document.getElementById('btnUpgrade') && document.getElementById('btnUpgrade').a
   if (!img) return showErr('Pick a firmware image first');
   clearErr();
   try {
-    await api(`/api/run/${runId}/upgrade`, { image_filename: img });
+    await api(`/api/run/${runId}/upgrade`, {
+      image_filename: img,
+      app_base_url: window.location.origin,
+    });
     pollRun();
   } catch (e) { showErr(e.message); }
 });
