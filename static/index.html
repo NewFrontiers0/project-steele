@@ -353,6 +353,7 @@ let lastSwimJob = null;
 let firmwareDownloadsDismissed = false;
 let firmwareDownloadsPinnedOpen = false;
 let runId = null;
+const openJobLogs = new Set();
 let mode = null;  // must be explicitly selected by the user
 
 const API_KEY_STORAGE = 'project_steele_api_key';
@@ -992,6 +993,7 @@ $('btnCreate').addEventListener('click', async () => {
       default_network_id: $('defaultNet').value, devices,
     });
     runId = res.run_id;
+    openJobLogs.clear();
     $('setupCard').classList.add('hidden');
     $('statusCard').classList.remove('hidden');
     $('runIdBadge').textContent = '· ' + runId;
@@ -1006,6 +1008,7 @@ $('btnCreate').addEventListener('click', async () => {
 $('btnNew').addEventListener('click', () => {
   if (pollTimer) clearInterval(pollTimer);
   runId = null;
+  openJobLogs.clear();
   $('statusCard').classList.add('hidden');
   $('setupCard').classList.remove('hidden');
 });
@@ -1078,7 +1081,9 @@ function renderRun(run) {
     // Show rolling log any time there's log content
     if (j.log && j.log.length) {
       const logHtml = j.log.slice(-20).map(l => l.replace(/</g,'&lt;')).join('<br/>');
-      detail += `<details ${isUpgrading?'open':''} style="margin-top:4px;">
+      const logKey = `${run.id}:${j.host}`;
+      const isLogOpen = isUpgrading || openJobLogs.has(logKey);
+      detail += `<details data-log-key="${escapeHtml(logKey)}" ${isLogOpen?'open':''} style="margin-top:4px;">
         <summary style="font-size:11px; color:#5a6878; cursor:pointer; user-select:none;">Log (${j.log.length} lines)</summary>
         <div style="background:#0e1620; color:#c4ccd5; padding:8px 10px; border-radius:4px; font-family:'SF Mono',Menlo,monospace; font-size:10px; line-height:1.55; max-height:200px; overflow-y:auto; margin-top:4px; white-space:pre-wrap;">${logHtml}</div>
       </details>`;
@@ -1093,6 +1098,15 @@ function renderRun(run) {
       <td style="min-width:320px; max-width:480px;">${detail}</td>
     </tr>`;
   }).join('');
+
+  document.querySelectorAll('#statusRows details[data-log-key]').forEach(el => {
+    el.addEventListener('toggle', () => {
+      const key = el.dataset.logKey;
+      if (!key) return;
+      if (el.open) openJobLogs.add(key);
+      else openJobLogs.delete(key);
+    });
+  });
 
   // Auto-scroll any open log panels to the bottom so new lines are visible
   document.querySelectorAll('#statusRows details[open] > div').forEach(d => {
