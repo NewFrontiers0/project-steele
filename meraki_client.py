@@ -7,6 +7,15 @@ from typing import Iterator, List, Optional
 
 import meraki
 
+try:
+    from meraki.exceptions import APIError as MerakiApiError
+except Exception:
+    MerakiApiError = getattr(meraki, "APIError", None)
+
+if MerakiApiError is None:
+    class MerakiApiError(Exception):
+        pass
+
 
 class MerakiError(Exception):
     pass
@@ -34,7 +43,7 @@ class MerakiClient:
         try:
             for org in self.dashboard.organizations.getOrganizations():
                 orgs.append({"id": org["id"], "name": org["name"]})
-        except meraki.APIError as e:
+        except MerakiApiError as e:
             raise MerakiError(f"Invalid API key: {e}") from e
         except Exception as e:
             raise MerakiError(f"Could not reach dashboard API: {e}") from e
@@ -45,7 +54,7 @@ class MerakiClient:
         try:
             networks = self.dashboard.organizations.getOrganizationNetworks(
                 organization_id, total_pages="all")
-        except meraki.APIError as e:
+        except MerakiApiError as e:
             raise MerakiError(f"Failed to list networks for organization {organization_id}: {e}") from e
         for n in networks:
             if "switch" not in n.get("productTypes", []):
@@ -70,11 +79,11 @@ class MerakiClient:
             self.dashboard.networks.claimNetworkDevices(
                 network_id, serials=[cloud_id], addAtomically=True,
                 detailsByDevice=[{"serial": cloud_id, "details": details}])
-        except meraki.APIError as e:
+        except MerakiApiError as e:
             raise MerakiError(f"Claim failed: {e}") from e
 
     def update_device_name(self, serial, name):
         try:
             self.dashboard.devices.updateDevice(serial, name=name)
-        except meraki.APIError as e:
+        except MerakiApiError as e:
             raise MerakiError(f"Set name failed: {e}") from e
