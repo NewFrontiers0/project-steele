@@ -273,20 +273,20 @@
   <div class="card">
     <h2>SSH session</h2>
     <div class="grid3">
-      <div><label>Switch IP or hostname</label><input id="cliHost" placeholder="switch.example.net" /></div>
+      <div><label>Switch IPs or hostnames</label><textarea id="cliHost" spellcheck="false" placeholder="switch-a.example.net&#10;switch-b.example.net"></textarea></div>
       <div><label>Username</label><input id="cliUser" value="admin" autocomplete="username" /></div>
       <div><label>Password</label><input id="cliPw" type="password" autocomplete="current-password" /></div>
     </div>
     <label>CLI command</label>
     <textarea id="cliCommand" spellcheck="false" placeholder="show version"></textarea>
     <div style="margin-top:12px; display:flex; justify-content:flex-end;">
-      <button class="primary" id="btnCliRun">Run command</button>
+      <button class="primary" id="btnCliRun">Run commands</button>
     </div>
   </div>
 
   <div class="card">
     <h2>Output</h2>
-    <pre id="cliOutput" class="terminal-output">No command run yet.</pre>
+    <pre id="cliOutput" class="terminal-output">No commands run yet.</pre>
   </div>
 </div>
 
@@ -551,35 +551,63 @@ function clearSwimErr() {
 }
 
 function formatCliOutput(data) {
-  return (data.results || []).map(result => {
-    const output = result.output ? result.output.trimEnd() : '';
-    return `${data.host}# ${result.command}\n${output}`;
+  const hostResults = data.results_by_host || [{
+    host: data.host,
+    ok: true,
+    status: 'done',
+    results: data.results || [],
+  }];
+  return hostResults.map(hostResult => {
+    const duration = hostResult.duration_seconds !== undefined
+      ? `, ${hostResult.duration_seconds}s`
+      : '';
+    const header = `=== ${hostResult.host} (${hostResult.status || (hostResult.ok ? 'done' : 'failed')}${duration}) ===`;
+    if (!hostResult.ok) {
+      return `${header}\nERROR: ${hostResult.error || 'Command run failed'}`;
+    }
+    const output = (hostResult.results || []).map(result => {
+      const commandOutput = result.output ? result.output.trimEnd() : '';
+      return `${hostResult.host}# ${result.command}\n${commandOutput}`;
+    }).join('\n\n');
+    return output ? `${header}\n${output}` : `${header}\nCommand completed with no output.`;
   }).join('\n\n');
+}
+
+function parseCliHosts(value) {
+  return value.split(/[\s,]+/).map(host => host.trim()).filter(Boolean);
+}
+
+function cliHostCountLabel(count) {
+  return count === 1 ? '1 switch' : `${count} switches`;
 }
 
 async function runCliCommand() {
   clearCliErr();
-  const host = $('cliHost').value.trim();
+  const hostsText = $('cliHost').value.trim();
+  const hosts = parseCliHosts(hostsText);
   const username = $('cliUser').value.trim();
   const password = $('cliPw').value;
   const command = $('cliCommand').value.trim();
-  if (!host) return showCliErr('Enter a switch IP or hostname');
+  if (!hosts.length) return showCliErr('Enter at least one switch IP or hostname');
   if (!username) return showCliErr('Enter a username');
   if (!password) return showCliErr('Enter a password');
   if (!command) return showCliErr('Enter a CLI command');
 
   $('btnCliRun').disabled = true;
   $('btnCliRun').textContent = 'Running...';
-  $('cliOutput').textContent = `Connecting to ${host}...`;
+  $('cliOutput').textContent = `Connecting to ${cliHostCountLabel(hosts.length)}...`;
   try {
-    const data = await api('/api/cli/run', { host, username, password, command });
-    $('cliOutput').textContent = formatCliOutput(data) || 'Command completed with no output.';
+    const data = await api('/api/cli/run', { hosts, username, password, command });
+    $('cliOutput').textContent = formatCliOutput(data);
+    if (!data.ok && data.failed_count) {
+      showCliErr(`${data.failed_count} of ${data.host_count} switches failed. See output for details.`);
+    }
   } catch (e) {
     $('cliOutput').textContent = '';
     showCliErr(e.message);
   } finally {
     $('btnCliRun').disabled = false;
-    $('btnCliRun').textContent = 'Run command';
+    $('btnCliRun').textContent = 'Run commands';
   }
 }
 

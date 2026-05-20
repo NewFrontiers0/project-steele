@@ -36,11 +36,13 @@ SWIM_HTTP_TCP_NOTSENT_LOWAT="${SWIM_HTTP_TCP_NOTSENT_LOWAT:-8192}"
 SWIM_FTP_PORT="${SWIM_FTP_PORT:-2121}"
 SWIM_FTP_PASSIVE_PORTS="${SWIM_FTP_PASSIVE_PORTS:-30000-30009}"
 SWIM_TFTP_PORT="${SWIM_TFTP_PORT:-69}"
+CLI_MAX_PARALLEL="${CLI_MAX_PARALLEL:-10}"
 KILL_PORT_LISTENER="${KILL_PORT_LISTENER:-1}"
 export SWIM_FILE_PORT SWIM_HTTP_PROFILE SWIM_HTTP_CHUNK_BYTES SWIM_HTTP_CHUNK_DELAY_MS
 export SWIM_HTTP_ACCELERATE_AFTER_BYTES SWIM_HTTP_ACCELERATED_CHUNK_BYTES SWIM_HTTP_ACCELERATED_CHUNK_DELAY_MS
 export SWIM_HTTP_INITIAL_DELAY_MS SWIM_HTTP_TCP_MAXSEG SWIM_HTTP_SNDBUF_BYTES SWIM_HTTP_TCP_NOTSENT_LOWAT
 export SWIM_FTP_PORT SWIM_FTP_PASSIVE_PORTS SWIM_TFTP_PORT
+export CLI_MAX_PARALLEL
 
 tcp_listen_pids() {
   local port="$1"
@@ -285,6 +287,7 @@ echo "==> SWIM firmware file server will listen on http://${HOST}:${SWIM_FILE_PO
 echo "==> SWIM HTTP stream profile: ${SWIM_HTTP_PROFILE} (transfer logs show exact chunk/delay values)"
 echo "==> SWIM FTP server will listen on ftp://${HOST}:${SWIM_FTP_PORT} with passive ports ${SWIM_FTP_PASSIVE_PORTS}"
 echo "==> SWIM TFTP server will listen on UDP/${SWIM_TFTP_PORT}"
+echo "==> CLI runner will use up to ${CLI_MAX_PARALLEL} parallel SSH sessions"
 echo "==> Cisco IOS-XE TFTP expects standard UDP/69; non-standard TFTP ports are usually rejected"
 echo "==> Open it from this machine at http://127.0.0.1:${PORT} or from the LAN at http://<this-machine-ip>:${PORT}"
 exec uvicorn main:app --reload --host "$HOST" --port "$PORT"

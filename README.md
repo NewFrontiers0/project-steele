@@ -156,7 +156,7 @@ timer run.
 
 ### Switch CLI
 
-Use the **CLI** button in the top-right toolbar to open a dedicated SSH command page. Enter the switch IP or hostname, username, password, and one or more CLI commands. The backend uses the same Netmiko IOS-XE SSH wrapper as the onboarding workflow and returns the command output in the page.
+Use the **CLI** button in the top-right toolbar to open a dedicated SSH command page. Enter one or more switch IPs or hostnames, username, password, and one or more CLI commands. The backend uses the same Netmiko IOS-XE SSH wrapper as the onboarding workflow, runs across switches in parallel, and returns per-switch command output in the page. Set `CLI_MAX_PARALLEL` to tune concurrent SSH sessions; the default is 10 and the app caps it at 20.
 
 ### SWIM
 
@@ -200,7 +200,7 @@ For switches that use a management VRF, set **Copy VRF** to the management VRF n
 | POST   | `/api/firmware/downloads/source` | Set the firmware repository host and port from the web UI |
 | POST   | `/api/firmware/downloads/retry` | Retry failed firmware downloads, or restart one file with `force: true` |
 | POST   | `/api/firmware/downloads/rescan` | Rescan the firmware repository for cat9k*.bin files |
-| POST   | `/api/cli/run`     | Run CLI command(s) on a switch over SSH             |
+| POST   | `/api/cli/run`     | Run CLI command(s) on one or more switches over SSH |
 | POST   | `/api/swim/upgrade` | Start a single-switch SWIM firmware upgrade        |
 | GET    | `/api/swim/upgrade/{id}` | Poll SWIM upgrade status, progress, and log output |
 | FTP    | `ftp://<app-host>:2121/{filename}` | SWIM firmware FTP transfer endpoint |

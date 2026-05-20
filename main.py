@@ -3,7 +3,9 @@ from __future__ import annotations
 
 import hmac
 import os
+import re
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import List, Literal, Optional
 
 from dotenv import load_dotenv
@@ -94,7 +96,8 @@ class FirmwareSourceRequest(BaseModel):
 
 
 class CliCommandRequest(BaseModel):
-    host: str = Field(..., min_length=1, max_length=255)
+    host: Optional[str] = Field(default=None, max_length=4000)
+    hosts: Optional[List[str]] = None
     username: str = Field(..., min_length=1, max_length=255)
     password: str = Field(..., min_length=1, max_length=255)
     command: str = Field(..., min_length=1, max_length=4000)
@@ -316,12 +319,101 @@ def run_cli_command(
         raise HTTPException(status_code=400, detail="Enter at least one CLI command")
     if len(commands) > 25:
         raise HTTPException(status_code=400, detail="Run 25 commands or fewer at a time")
+
+    hosts = _parse_cli_hosts(req.host, req.hosts)
+    if not hosts:
+        raise HTTPException(status_code=400, detail="Enter at least one switch IP or hostname")
+    if len(hosts) > 50:
+        raise HTTPException(status_code=400, detail="Run commands on 50 switches or fewer at a time")
+
+    max_workers = min(_cli_parallelism(), len(hosts))
+    results_by_host = [None] * len(hosts)
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = {
+            executor.submit(
+                _run_cli_on_host,
+                host,
+                req.username.strip(),
+                req.password,
+                req.secret,
+                commands,
+                req.read_timeout,
+            ): index
+            for index, host in enumerate(hosts)
+        }
+        for future in as_completed(futures):
+            results_by_host[futures[future]] = future.result()
+
+    failed = [result for result in results_by_host if not result["ok"]]
+    first = results_by_host[0]
+    return {
+        "ok": not failed,
+        "host": first["host"],
+        "results": first["results"],
+        "results_by_host": results_by_host,
+        "host_count": len(results_by_host),
+        "succeeded_count": len(results_by_host) - len(failed),
+        "failed_count": len(failed),
+    }
+
+
+def _parse_cli_hosts(host: Optional[str], hosts: Optional[List[str]]) -> List[str]:
+    values = []
+    if host:
+        values.append(host)
+    values.extend(hosts or [])
+
+    parsed = []
+    seen = set()
+    for value in values:
+        for candidate in re.split(r"[\s,]+", value.strip()):
+            candidate = candidate.strip()
+            if not candidate or candidate in seen:
+                continue
+            seen.add(candidate)
+            parsed.append(candidate)
+    return parsed
+
+
+def _cli_parallelism() -> int:
     try:
-        with SwitchClient(req.host.strip(), req.username.strip(), req.password, req.secret) as sw:
-            results = sw.run_cli_commands(commands, read_timeout=req.read_timeout)
+        return max(1, min(20, int(os.environ.get("CLI_MAX_PARALLEL", "10"))))
+    except ValueError:
+        return 10
+
+
+def _run_cli_on_host(host: str, username: str, password: str, secret: Optional[str],
+                     commands: List[str], read_timeout: int) -> dict:
+    started = time.time()
+    try:
+        with SwitchClient(host, username, password, secret) as sw:
+            results = sw.run_cli_commands(commands, read_timeout=read_timeout)
+        return {
+            "host": host,
+            "ok": True,
+            "status": "done",
+            "error": None,
+            "results": results,
+            "duration_seconds": round(time.time() - started, 2),
+        }
     except SwitchError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    return {"ok": True, "host": req.host.strip(), "results": results}
+        return {
+            "host": host,
+            "ok": False,
+            "status": "failed",
+            "error": str(e),
+            "results": [],
+            "duration_seconds": round(time.time() - started, 2),
+        }
+    except Exception as e:
+        return {
+            "host": host,
+            "ok": False,
+            "status": "failed",
+            "error": f"Unexpected error: {e}",
+            "results": [],
+            "duration_seconds": round(time.time() - started, 2),
+        }
 
 
 @app.post("/api/swim/upgrade")

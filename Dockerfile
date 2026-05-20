@@ -24,6 +24,8 @@ RUN chmod +x docker-entrypoint.sh
 RUN mkdir -p /app/firmware
 VOLUME ["/app/firmware"]
 
+ENV CLI_MAX_PARALLEL=10
+
 EXPOSE 8001 9000 2121 69/udp 30000 30001 30002 30003 30004 30005 30006 30007 30008 30009
 
 ENTRYPOINT ["./docker-entrypoint.sh"]
