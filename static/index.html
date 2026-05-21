@@ -14,6 +14,14 @@
   .topbar-actions { margin-left:auto; display:flex; align-items:center; gap:8px; }
   .topbar-action { background:#16375f; border:1px solid #315a89; color:#f8fafc; padding:7px 12px; border-radius:6px; font-size:12px; font-weight:500; cursor:pointer; font-family:inherit; }
   .topbar-action:hover { background:#1f4778; border-color:#6f95c7; }
+  .tools-menu { position:relative; }
+  .tools-toggle { display:flex; align-items:center; gap:8px; }
+  .tools-toggle::after { content:""; width:0; height:0; border-left:4px solid transparent; border-right:4px solid transparent; border-top:5px solid #d7e3f2; }
+  .tools-menu.open .tools-toggle { background:#1f4778; border-color:#6f95c7; }
+  .tools-menu.open .tools-toggle::after { transform:rotate(180deg); }
+  .tools-menu-panel { position:absolute; top:calc(100% + 8px); right:0; min-width:190px; background:#fff; border:1px solid #d9e0e8; border-radius:8px; box-shadow:0 14px 34px rgba(14,39,71,0.2); padding:6px; z-index:1300; }
+  .tools-menu-item { width:100%; display:block; background:#fff; border:none; color:#1a2433; text-align:left; padding:9px 10px; border-radius:6px; font-size:13px; font-weight:500; cursor:pointer; font-family:inherit; }
+  .tools-menu-item:hover, .tools-menu-item:focus { outline:none; background:#eef4ff; color:#1858c4; }
   .container { max-width:1200px; margin:24px auto; padding:0 24px; }
   h1 { font-size:28px; font-weight:500; color:#0e2747; margin:0 0 6px; }
   .subtitle { font-size:13px; color:#5a6878; margin-bottom:18px; }
@@ -141,9 +149,14 @@
 <div class="topbar">
   <div class="brand">project-steele <span id="appVersion" class="app-version">v1.0.2</span></div>
   <div class="topbar-actions">
-    <button id="cliLauncher" class="topbar-action">CLI</button>
-    <button id="swimLauncher" class="topbar-action">SWIM</button>
-    <button id="downloadLauncher" class="topbar-action">Firmware downloads</button>
+    <div id="toolsMenu" class="tools-menu">
+      <button id="toolsMenuToggle" class="topbar-action tools-toggle" aria-haspopup="true" aria-expanded="false">Tools</button>
+      <div id="toolsMenuPanel" class="tools-menu-panel hidden" role="menu" aria-label="Tools">
+        <button id="cliLauncher" class="tools-menu-item" role="menuitem">CLI</button>
+        <button id="swimLauncher" class="tools-menu-item" role="menuitem">SWIM</button>
+        <button id="downloadLauncher" class="tools-menu-item" role="menuitem">Firmware downloads</button>
+      </div>
+    </div>
     <button id="logoutBtn" class="topbar-action">Logout</button>
   </div>
 </div>
@@ -507,6 +520,23 @@ function showMainPage() {
   $('cliPage').classList.add('hidden');
   $('swimPage').classList.add('hidden');
   $('mainPage').classList.remove('hidden');
+}
+
+function closeToolsMenu() {
+  $('toolsMenu').classList.remove('open');
+  $('toolsMenuPanel').classList.add('hidden');
+  $('toolsMenuToggle').setAttribute('aria-expanded', 'false');
+}
+
+function toggleToolsMenu() {
+  const isOpen = !$('toolsMenuPanel').classList.contains('hidden');
+  if (isOpen) {
+    closeToolsMenu();
+  } else {
+    $('toolsMenu').classList.add('open');
+    $('toolsMenuPanel').classList.remove('hidden');
+    $('toolsMenuToggle').setAttribute('aria-expanded', 'true');
+  }
 }
 
 function showCliPage() {
@@ -915,14 +945,24 @@ $('firmwareSourceHost').addEventListener('keydown', e => { if (e.key === 'Enter'
 $('firmwareSourcePort').addEventListener('keydown', e => { if (e.key === 'Enter') setFirmwareSource(); });
 $('downloadRetryAll').addEventListener('click', () => retryFirmwareDownload(null, false));
 $('downloadRescan').addEventListener('click', rescanFirmwareDownloads);
+$('toolsMenuToggle').addEventListener('click', (e) => {
+  e.stopPropagation();
+  toggleToolsMenu();
+});
+$('toolsMenuPanel').addEventListener('click', e => e.stopPropagation());
+document.addEventListener('click', closeToolsMenu);
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') closeToolsMenu();
+});
 $('downloadLauncher').addEventListener('click', () => {
+  closeToolsMenu();
   firmwareDownloadsDismissed = false;
   firmwareDownloadsPinnedOpen = true;
   $('downloadPopout').classList.remove('hidden');
   refreshFirmwareDownloads();
 });
-$('cliLauncher').addEventListener('click', showCliPage);
-$('swimLauncher').addEventListener('click', showSwimPage);
+$('cliLauncher').addEventListener('click', () => { closeToolsMenu(); showCliPage(); });
+$('swimLauncher').addEventListener('click', () => { closeToolsMenu(); showSwimPage(); });
 $('cliBack').addEventListener('click', showMainPage);
 $('swimBack').addEventListener('click', showMainPage);
 $('btnCliRun').addEventListener('click', runCliCommand);
