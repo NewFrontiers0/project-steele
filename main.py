@@ -22,7 +22,9 @@ from jobs import FIRMWARE_DIR, store, list_firmware_files
 from meraki_client import MerakiClient, MerakiError
 from discovery import scan_store
 from firmware_downloads import firmware_downloads
+from latency import latency_targets, run_latency_test
 from switch import SwitchClient, SwitchError
+from profiles import AuthError, ProfileError, user_store
 from swim import swim_store
 from swim_file_server import http_streaming_profile
 
@@ -95,6 +97,15 @@ class FirmwareSourceRequest(BaseModel):
     scheme: Literal["http", "https"] = "http"
 
 
+class AuthLoginRequest(BaseModel):
+    username: str = Field(..., min_length=3, max_length=64)
+    password: str = Field(..., min_length=1, max_length=255)
+
+
+class AuthRegisterRequest(AuthLoginRequest):
+    api_key: str = Field(..., min_length=16, max_length=255)
+
+
 class CliCommandRequest(BaseModel):
     host: Optional[str] = Field(default=None, max_length=4000)
     hosts: Optional[List[str]] = None
@@ -152,12 +163,18 @@ def version():
 
 
 def _get_api_key(
+    x_project_steele_session: Optional[str] = Header(default=None, alias="X-Project-Steele-Session"),
     x_project_steele_api_key: Optional[str] = Header(default=None, alias="X-Project-Steele-API-Key"),
     x_meraki_api_key: Optional[str] = Header(default=None, alias="X-Meraki-API-Key"),
 ) -> str:
+    if x_project_steele_session:
+        try:
+            return user_store.api_key_for_session(x_project_steele_session.strip())
+        except AuthError as e:
+            raise HTTPException(status_code=401, detail=str(e))
     api_key = (x_project_steele_api_key or x_meraki_api_key or "").strip()
     if not api_key:
-        raise HTTPException(status_code=401, detail="project-steele API key is required")
+        raise HTTPException(status_code=401, detail="Sign in to continue")
     return api_key
 
 
@@ -187,6 +204,62 @@ def login(api_key: str = Depends(_get_api_key)):
     if not organizations:
         raise HTTPException(status_code=403, detail="No project-steele organizations are available for this API key")
     return {"ok": True, "organizations": [OrganizationOption(**org) for org in organizations]}
+
+
+def _auth_response(username: str, api_key: str) -> dict:
+    try:
+        organizations = MerakiClient(api_key).list_organizations()
+    except MerakiError as e:
+        raise HTTPException(status_code=_meraki_error_status(e), detail=str(e))
+    if not organizations:
+        raise HTTPException(status_code=403, detail="No project-steele organizations are available for this profile")
+    token = user_store.create_session(username)
+    return {
+        "ok": True,
+        "username": username,
+        "token": token,
+        "organizations": [OrganizationOption(**org) for org in organizations],
+    }
+
+
+@app.post("/api/auth/register")
+def auth_register(req: AuthRegisterRequest):
+    api_key = req.api_key.strip()
+    try:
+        organizations = MerakiClient(api_key).list_organizations()
+    except MerakiError as e:
+        raise HTTPException(status_code=_meraki_error_status(e), detail=str(e))
+    if not organizations:
+        raise HTTPException(status_code=403, detail="No project-steele organizations are available for this API key")
+    try:
+        username = user_store.create_user(req.username, req.password, api_key)
+    except ProfileError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    token = user_store.create_session(username)
+    return {
+        "ok": True,
+        "username": username,
+        "token": token,
+        "organizations": [OrganizationOption(**org) for org in organizations],
+    }
+
+
+@app.post("/api/auth/login")
+def auth_login(req: AuthLoginRequest):
+    try:
+        username = user_store.authenticate(req.username, req.password)
+        api_key = user_store.api_key_for_user(username)
+    except (AuthError, ProfileError) as e:
+        raise HTTPException(status_code=401, detail=str(e))
+    return _auth_response(username, api_key)
+
+
+@app.post("/api/auth/logout")
+def auth_logout(
+    x_project_steele_session: Optional[str] = Header(default=None, alias="X-Project-Steele-Session"),
+):
+    user_store.invalidate_session((x_project_steele_session or "").strip())
+    return {"ok": True}
 
 
 @app.post("/api/run", response_model=RunResponse)
@@ -414,6 +487,22 @@ def _run_cli_on_host(host: str, username: str, password: str, secret: Optional[s
             "results": [],
             "duration_seconds": round(time.time() - started, 2),
         }
+
+
+@app.get("/api/latency/targets")
+def get_latency_targets(
+    _api_key: str = Depends(_get_api_key),
+    _org_id: str = Depends(_get_org_id),
+):
+    return latency_targets()
+
+
+@app.post("/api/latency/run")
+def run_latency(
+    _api_key: str = Depends(_get_api_key),
+    _org_id: str = Depends(_get_org_id),
+):
+    return run_latency_test()
 
 
 @app.post("/api/swim/upgrade")

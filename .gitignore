@@ -14,3 +14,6 @@ firmware/*.bin
 *.zip
 *.log
 *.pcap
+
+# Local user profile store. Contains API keys and password hashes.
+data/

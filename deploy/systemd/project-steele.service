@@ -25,7 +25,11 @@ Environment=SWIM_HTTP_TCP_MAXSEG=1024
 Environment=SWIM_HTTP_SNDBUF_BYTES=32768
 Environment=SWIM_HTTP_TCP_NOTSENT_LOWAT=8192
 Environment=CLI_MAX_PARALLEL=10
+Environment=LATENCY_MAX_PARALLEL=12
+Environment=PROFILE_SESSION_HOURS=12
+Environment=PROJECT_STEELE_USERS_FILE=/opt/project-steele/data/users.json
 EnvironmentFile=-/opt/project-steele/.env
+ExecStartPre=+/usr/bin/install -d -o steele -g steele -m 700 /opt/project-steele/data
 ExecStart=/opt/project-steele/.venv/bin/uvicorn main:app --host ${HOST} --port ${PORT}
 Restart=always
 RestartSec=5

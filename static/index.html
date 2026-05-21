@@ -22,6 +22,9 @@
   .tools-menu-panel { position:absolute; top:calc(100% + 8px); right:0; min-width:190px; background:#fff; border:1px solid #d9e0e8; border-radius:8px; box-shadow:0 14px 34px rgba(14,39,71,0.2); padding:6px; z-index:1300; }
   .tools-menu-item { width:100%; display:block; background:#fff; border:none; color:#1a2433; text-align:left; padding:9px 10px; border-radius:6px; font-size:13px; font-weight:500; cursor:pointer; font-family:inherit; }
   .tools-menu-item:hover, .tools-menu-item:focus { outline:none; background:#eef4ff; color:#1858c4; }
+  .auth-tabs { display:flex; gap:8px; margin-bottom:18px; }
+  .auth-tab { flex:1; border:1px solid #c4ccd5; background:#fff; color:#5a6878; padding:8px 10px; border-radius:6px; font-size:12px; font-weight:500; cursor:pointer; font-family:inherit; }
+  .auth-tab.active { border-color:#1f6feb; background:#eef4ff; color:#1858c4; }
   .container { max-width:1200px; margin:24px auto; padding:0 24px; }
   h1 { font-size:28px; font-weight:500; color:#0e2747; margin:0 0 6px; }
   .subtitle { font-size:13px; color:#5a6878; margin-bottom:18px; }
@@ -92,6 +95,22 @@
   .download-empty { color:#5a6878; font-size:12px; line-height:1.45; padding:12px 14px; }
   .page-head { display:flex; justify-content:space-between; align-items:flex-start; gap:16px; margin-bottom:18px; }
   .terminal-output { min-height:260px; background:#0e1620; color:#e3e7ec; border-radius:6px; padding:14px 16px; overflow:auto; white-space:pre-wrap; font-family:'SF Mono',Menlo,monospace; font-size:12px; line-height:1.55; border:1px solid #1f3044; }
+  .latency-summary { display:grid; grid-template-columns:repeat(3,1fr); gap:14px; }
+  .latency-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:12px; }
+  .latency-tile { border:1px solid #e3e7ec; border-radius:8px; background:#fff; padding:14px; display:flex; flex-direction:column; gap:10px; min-height:132px; }
+  .latency-tile.local { border-color:#bcd4ff; background:#f8fbff; }
+  .latency-top { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; }
+  .latency-city { font-size:15px; font-weight:600; color:#0e2747; }
+  .latency-region { font-size:11px; color:#5a6878; margin-top:2px; }
+  .latency-ms { font-size:28px; font-weight:600; color:#0e2747; line-height:1; }
+  .latency-ms span { font-size:12px; color:#5a6878; font-weight:500; margin-left:3px; }
+  .latency-meta { display:grid; gap:4px; font-size:11px; color:#5a6878; word-break:break-word; }
+  .latency-bar { height:5px; border-radius:999px; overflow:hidden; background:#e3e7ec; }
+  .latency-fill { height:100%; width:0%; background:#1f6feb; }
+  .latency-tile.good .latency-fill { background:#1a7e3e; }
+  .latency-tile.ok .latency-fill { background:#d08a00; }
+  .latency-tile.slow .latency-fill, .latency-tile.failed .latency-fill { background:#b3261e; }
+  .latency-tile.failed .latency-ms { color:#b3261e; font-size:18px; line-height:1.2; }
   @keyframes download-indeterminate {
     0% { transform:translateX(-110%); }
     100% { transform:translateX(280%); }
@@ -104,18 +123,28 @@
   <div style="background:#fff; border-radius:8px; padding:32px; width:460px; max-width:90vw; box-shadow:0 20px 60px rgba(0,0,0,0.3);">
     <div style="display:flex; align-items:baseline; gap:8px; margin-bottom:8px;">
       <div style="font-size:22px; font-weight:600; color:#0e2747;">project-steele</div>
-      <div id="loginVersion" style="font-size:11px; color:#8896a8; font-weight:500;">v1.0.2</div>
+      <div id="loginVersion" style="font-size:11px; color:#8896a8; font-weight:500;">v1.1.0</div>
     </div>
-    <div style="font-size:13px; color:#5a6878; margin-bottom:20px;">Enter your project-steele API key, then choose the organization you want to work in.</div>
-    <label style="font-size:12px; color:#5a6878; display:block; margin-bottom:6px;">API Key</label>
-    <input id="loginKey" type="password" autocomplete="off" placeholder="project-steele API key" style="width:100%; padding:10px 12px; border:1px solid #c1cad5; border-radius:6px; font-size:13px; box-sizing:border-box;" />
+    <div style="font-size:13px; color:#5a6878; margin-bottom:20px;">Sign in with a project-steele profile. The dashboard API key stays linked to the profile.</div>
+    <div class="auth-tabs">
+      <button id="authSignInTab" class="auth-tab active" type="button">Sign in</button>
+      <button id="authCreateTab" class="auth-tab" type="button">Create profile</button>
+    </div>
+    <label style="font-size:12px; color:#5a6878; display:block; margin-bottom:6px;">Username</label>
+    <input id="loginUsername" autocomplete="username" placeholder="username" style="width:100%; padding:10px 12px; border:1px solid #c1cad5; border-radius:6px; font-size:13px; box-sizing:border-box; margin-bottom:12px;" />
+    <label style="font-size:12px; color:#5a6878; display:block; margin-bottom:6px;">Password</label>
+    <input id="loginPassword" type="password" autocomplete="current-password" placeholder="password" style="width:100%; padding:10px 12px; border:1px solid #c1cad5; border-radius:6px; font-size:13px; box-sizing:border-box;" />
+    <div id="profileKeyStep" class="hidden" style="margin-top:12px;">
+      <label style="font-size:12px; color:#5a6878; display:block; margin-bottom:6px;">Dashboard API key</label>
+      <input id="profileApiKey" type="password" autocomplete="off" placeholder="API key to link to this profile" style="width:100%; padding:10px 12px; border:1px solid #c1cad5; border-radius:6px; font-size:13px; box-sizing:border-box;" />
+    </div>
     <div id="orgStep" class="hidden" style="margin-top:14px;">
       <label style="font-size:12px; color:#5a6878; display:block; margin-bottom:6px;">Organization</label>
       <select id="loginOrg"></select>
     </div>
     <div id="loginErr" style="color:#b3261e; font-size:12px; margin-top:8px; min-height:16px;"></div>
-    <button id="loginBtn" class="primary" style="width:100%; margin-top:16px; padding:10px;">Continue</button>
-    <div style="font-size:11px; color:#8896a8; margin-top:14px; text-align:center;">Get your key from the dashboard → My Profile → API access</div>
+    <button id="loginBtn" class="primary" style="width:100%; margin-top:16px; padding:10px;">Sign in</button>
+    <div style="font-size:11px; color:#8896a8; margin-top:14px; text-align:center;">Profile data is stored locally on this project-steele server.</div>
   </div>
 </div>
 
@@ -147,13 +176,14 @@
 </div>
 
 <div class="topbar">
-  <div class="brand">project-steele <span id="appVersion" class="app-version">v1.0.2</span></div>
+  <div class="brand">project-steele <span id="appVersion" class="app-version">v1.1.0</span></div>
   <div class="topbar-actions">
     <div id="toolsMenu" class="tools-menu">
       <button id="toolsMenuToggle" class="topbar-action tools-toggle" aria-haspopup="true" aria-expanded="false">Tools</button>
       <div id="toolsMenuPanel" class="tools-menu-panel hidden" role="menu" aria-label="Tools">
         <button id="cliLauncher" class="tools-menu-item" role="menuitem">CLI</button>
         <button id="swimLauncher" class="tools-menu-item" role="menuitem">SWIM</button>
+        <button id="latencyLauncher" class="tools-menu-item" role="menuitem">Latency</button>
         <button id="downloadLauncher" class="tools-menu-item" role="menuitem">Firmware downloads</button>
       </div>
     </div>
@@ -356,6 +386,35 @@
   </div>
 </div>
 
+<div class="container hidden" id="latencyPage">
+  <div class="page-head">
+    <div>
+      <h1>Latency</h1>
+      <div class="subtitle">Measure round-trip time from the project-steele host to a local gateway and public global targets.</div>
+    </div>
+    <button class="secondary" id="latencyBack">Back to onboarding</button>
+  </div>
+
+  <div id="latencyErr" class="err-banner hidden"></div>
+
+  <div class="card">
+    <div style="display:flex; justify-content:space-between; align-items:center; gap:14px; margin-bottom:18px;">
+      <div>
+        <h2 style="margin:0 0 4px;">Global latency</h2>
+        <div id="latencyStamp" style="font-size:12px; color:#5a6878;">No test run yet.</div>
+      </div>
+      <button class="primary" id="btnLatencyRun">Run test</button>
+    </div>
+    <div class="latency-summary">
+      <div class="stat"><div><div id="latencyReachable" class="num">0</div><div class="label">Reachable</div></div><div class="icon" style="background:#e6f7ed; color:#1a7e3e;">✓</div></div>
+      <div class="stat"><div><div id="latencyAverage" class="num">—</div><div class="label">Average</div></div><div class="icon" style="background:#eef4ff; color:#1858c4;">ms</div></div>
+      <div class="stat"><div><div id="latencySlowest" class="num">—</div><div class="label">Slowest</div></div><div class="icon" style="background:#fef4e6; color:#a96a00;">!</div></div>
+    </div>
+  </div>
+
+  <div class="latency-grid" id="latencyGrid"></div>
+</div>
+
 <script>
 let networks = [];
 let pollTimer = null;
@@ -369,12 +428,15 @@ let runId = null;
 const openJobLogs = new Set();
 let mode = null;  // must be explicitly selected by the user
 
-const API_KEY_STORAGE = 'project_steele_api_key';
+const SESSION_TOKEN_STORAGE = 'project_steele_session_token';
+const USERNAME_STORAGE = 'project_steele_username';
 const ORG_ID_STORAGE = 'project_steele_org_id';
 const ORG_NAME_STORAGE = 'project_steele_org_name';
 
 let loginOrganizations = [];
-let loginKeyForOrganizations = '';
+let loginMode = 'signin';
+let loginToken = '';
+let loginUsername = '';
 
 async function loadAppVersion() {
   try {
@@ -387,8 +449,8 @@ async function loadAppVersion() {
   } catch (_) {}
 }
 
-function getApiKey() {
-  return sessionStorage.getItem(API_KEY_STORAGE);
+function getSessionToken() {
+  return sessionStorage.getItem(SESSION_TOKEN_STORAGE);
 }
 
 function getOrgId() {
@@ -396,7 +458,8 @@ function getOrgId() {
 }
 
 function clearSession() {
-  sessionStorage.removeItem(API_KEY_STORAGE);
+  sessionStorage.removeItem(SESSION_TOKEN_STORAGE);
+  sessionStorage.removeItem(USERNAME_STORAGE);
   sessionStorage.removeItem(ORG_ID_STORAGE);
   sessionStorage.removeItem(ORG_NAME_STORAGE);
   updateOrgLabel();
@@ -416,39 +479,60 @@ function updateOrgLabel() {
 
 function resetOrgLoginStep() {
   loginOrganizations = [];
-  loginKeyForOrganizations = '';
+  loginToken = '';
+  loginUsername = '';
   document.getElementById('orgStep').classList.add('hidden');
   document.getElementById('loginOrg').innerHTML = '';
-  document.getElementById('loginBtn').textContent = 'Continue';
+  document.getElementById('loginBtn').textContent = loginMode === 'create' ? 'Create profile' : 'Sign in';
+}
+
+function setLoginMode(nextMode) {
+  loginMode = nextMode;
+  document.getElementById('authSignInTab').classList.toggle('active', loginMode === 'signin');
+  document.getElementById('authCreateTab').classList.toggle('active', loginMode === 'create');
+  document.getElementById('profileKeyStep').classList.toggle('hidden', loginMode !== 'create');
+  document.getElementById('loginPassword').setAttribute('autocomplete', loginMode === 'create' ? 'new-password' : 'current-password');
+  document.getElementById('loginErr').textContent = '';
+  resetOrgLoginStep();
+}
+
+async function fetchAuth(path, body) {
+  const res = await fetch(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: 'Login failed' }));
+    throw new Error(err.detail || 'Login failed');
+  }
+  return res.json();
 }
 
 document.getElementById('loginBtn').addEventListener('click', async () => {
-  const key = document.getElementById('loginKey').value.trim();
+  const username = document.getElementById('loginUsername').value.trim();
+  const password = document.getElementById('loginPassword').value;
+  const apiKey = document.getElementById('profileApiKey').value.trim();
   const orgSelect = document.getElementById('loginOrg');
   const loginBtn = document.getElementById('loginBtn');
   const errBox = document.getElementById('loginErr');
   errBox.textContent = '';
-  if (!key) { errBox.textContent = 'Enter an API key'; return; }
+  if (!username) { errBox.textContent = 'Enter a username'; return; }
+  if (!password) { errBox.textContent = 'Enter a password'; return; }
+  if (loginMode === 'create' && !apiKey) { errBox.textContent = 'Enter the dashboard API key to link'; return; }
 
   try {
-    if (!loginOrganizations.length || loginKeyForOrganizations !== key) {
+    if (!loginOrganizations.length || !loginToken) {
       loginBtn.disabled = true;
-      loginBtn.textContent = 'Checking...';
-      const res = await fetch('/api/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Project-Steele-API-Key': key },
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({ detail: 'Login failed' }));
-        errBox.textContent = err.detail || 'Login failed';
-        resetOrgLoginStep();
-        return;
-      }
-      const data = await res.json();
+      loginBtn.textContent = loginMode === 'create' ? 'Creating...' : 'Checking...';
+      const data = loginMode === 'create'
+        ? await fetchAuth('/api/auth/register', { username, password, api_key: apiKey })
+        : await fetchAuth('/api/auth/login', { username, password });
       loginOrganizations = data.organizations || [];
-      loginKeyForOrganizations = key;
+      loginToken = data.token || '';
+      loginUsername = data.username || username;
       if (!loginOrganizations.length) {
-        errBox.textContent = 'No project-steele organizations are available for this API key';
+        errBox.textContent = 'No project-steele organizations are available for this profile';
         resetOrgLoginStep();
         return;
       }
@@ -462,7 +546,8 @@ document.getElementById('loginBtn').addEventListener('click', async () => {
 
     const selectedOrg = loginOrganizations.find(org => org.id === orgSelect.value);
     if (!selectedOrg) { errBox.textContent = 'Select an organization'; return; }
-    sessionStorage.setItem(API_KEY_STORAGE, key);
+    sessionStorage.setItem(SESSION_TOKEN_STORAGE, loginToken);
+    sessionStorage.setItem(USERNAME_STORAGE, loginUsername);
     sessionStorage.setItem(ORG_ID_STORAGE, selectedOrg.id);
     sessionStorage.setItem(ORG_NAME_STORAGE, selectedOrg.name);
     updateOrgLabel();
@@ -471,17 +556,22 @@ document.getElementById('loginBtn').addEventListener('click', async () => {
     if (typeof loadNetworks === 'function') loadNetworks();
   } catch (e) {
     errBox.textContent = e.message || 'Network error';
+    resetOrgLoginStep();
   } finally {
     loginBtn.disabled = false;
-    loginBtn.textContent = loginOrganizations.length ? 'Sign in' : 'Continue';
+    loginBtn.textContent = loginOrganizations.length ? 'Sign in' : (loginMode === 'create' ? 'Create profile' : 'Sign in');
   }
 });
 
-document.getElementById('loginKey').addEventListener('input', resetOrgLoginStep);
+document.getElementById('authSignInTab').addEventListener('click', () => setLoginMode('signin'));
+document.getElementById('authCreateTab').addEventListener('click', () => setLoginMode('create'));
+document.getElementById('loginUsername').addEventListener('input', resetOrgLoginStep);
+document.getElementById('loginPassword').addEventListener('input', resetOrgLoginStep);
+document.getElementById('profileApiKey').addEventListener('input', resetOrgLoginStep);
 
-// On page load: if we already have a key and org in sessionStorage, hide login.
+// On page load: if we already have a session token and org in sessionStorage, hide login.
 // Otherwise it stays visible (it's display:flex by default).
-if (getApiKey() && getOrgId()) {
+if (getSessionToken() && getOrgId()) {
   document.getElementById('loginOverlay').style.display = 'none';
   updateOrgLabel();
 } else {
@@ -489,8 +579,10 @@ if (getApiKey() && getOrgId()) {
 }
 
 // Allow Enter key to submit
-document.getElementById('loginKey').addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') document.getElementById('loginBtn').click();
+['loginUsername', 'loginPassword', 'profileApiKey'].forEach(id => {
+  document.getElementById(id).addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') document.getElementById('loginBtn').click();
+  });
 });
 
 const $ = id => document.getElementById(id);
@@ -499,9 +591,9 @@ const clearErr = () => $('errBanner').classList.add('hidden');
 
 async function api(path, body) {
   const headers = {'Content-Type':'application/json'};
-  const key = getApiKey();
+  const token = getSessionToken();
   const orgId = getOrgId();
-  if (key) headers['X-Project-Steele-API-Key'] = key;
+  if (token) headers['X-Project-Steele-Session'] = token;
   if (orgId) headers['X-Project-Steele-Org-Id'] = orgId;
   const opts = { method: body !== undefined ? 'POST' : 'GET', headers };
   if (body !== undefined) opts.body = JSON.stringify(body);
@@ -519,6 +611,7 @@ async function api(path, body) {
 function showMainPage() {
   $('cliPage').classList.add('hidden');
   $('swimPage').classList.add('hidden');
+  $('latencyPage').classList.add('hidden');
   $('mainPage').classList.remove('hidden');
 }
 
@@ -542,6 +635,7 @@ function toggleToolsMenu() {
 function showCliPage() {
   clearErr();
   $('swimPage').classList.add('hidden');
+  $('latencyPage').classList.add('hidden');
   if (!$('cliUser').value && $('user').value) $('cliUser').value = $('user').value;
   if (!$('cliPw').value && $('pw').value) $('cliPw').value = $('pw').value;
   $('mainPage').classList.add('hidden');
@@ -552,12 +646,22 @@ function showCliPage() {
 function showSwimPage() {
   clearErr();
   $('cliPage').classList.add('hidden');
+  $('latencyPage').classList.add('hidden');
   if (!$('swimUser').value && $('user').value) $('swimUser').value = $('user').value;
   if (!$('swimPw').value && $('pw').value) $('swimPw').value = $('pw').value;
   $('mainPage').classList.add('hidden');
   $('swimPage').classList.remove('hidden');
   loadSwimImages();
   $('swimHost').focus();
+}
+
+function showLatencyPage() {
+  clearErr();
+  $('cliPage').classList.add('hidden');
+  $('swimPage').classList.add('hidden');
+  $('mainPage').classList.add('hidden');
+  $('latencyPage').classList.remove('hidden');
+  if (!$('latencyGrid').children.length) renderLatencyResults({ results: [] });
 }
 
 function showCliErr(message) {
@@ -578,6 +682,16 @@ function showSwimErr(message) {
 
 function clearSwimErr() {
   $('swimErr').classList.add('hidden');
+}
+
+function showLatencyErr(message) {
+  const box = $('latencyErr');
+  box.textContent = message;
+  box.classList.remove('hidden');
+}
+
+function clearLatencyErr() {
+  $('latencyErr').classList.add('hidden');
 }
 
 function formatCliOutput(data) {
@@ -759,6 +873,84 @@ async function startSwimUpgrade() {
     $('btnSwimStart').disabled = false;
     $('btnSwimStart').textContent = 'Start SWIM upgrade';
     showSwimErr(e.message);
+  }
+}
+
+function latencyTone(result) {
+  if (!result.ok || result.avg_ms === null || result.avg_ms === undefined) return 'failed';
+  if (result.avg_ms <= 60) return 'good';
+  if (result.avg_ms <= 160) return 'ok';
+  return 'slow';
+}
+
+function latencyWidth(result) {
+  if (!result.ok || result.avg_ms === null || result.avg_ms === undefined) return 100;
+  return Math.max(5, Math.min(100, Math.round((result.avg_ms / 320) * 100)));
+}
+
+function latencyMsLabel(result) {
+  if (!result.ok || result.avg_ms === null || result.avg_ms === undefined) return 'No reply';
+  return `${result.avg_ms}<span>ms</span>`;
+}
+
+function renderLatencyResults(data) {
+  const results = data.results || [];
+  const reachable = results.filter(r => r.ok && r.avg_ms !== null && r.avg_ms !== undefined);
+  const average = reachable.length
+    ? Math.round(reachable.reduce((sum, r) => sum + r.avg_ms, 0) / reachable.length)
+    : null;
+  const slowest = reachable.length
+    ? reachable.reduce((max, r) => r.avg_ms > max.avg_ms ? r : max, reachable[0])
+    : null;
+
+  $('latencyReachable').textContent = `${reachable.length}/${results.length || 0}`;
+  $('latencyAverage').textContent = average === null ? '—' : `${average}`;
+  $('latencySlowest').textContent = slowest ? `${Math.round(slowest.avg_ms)}` : '—';
+  $('latencyStamp').textContent = data.tested_at
+    ? `Last run ${new Date(data.tested_at * 1000).toLocaleString()} · ${data.duration_seconds}s`
+    : 'No test run yet.';
+
+  if (!results.length) {
+    $('latencyGrid').innerHTML = '<div class="card" style="grid-column:1/-1; margin-bottom:0; color:#5a6878; font-size:13px;">Run a test to populate the latency tiles.</div>';
+    return;
+  }
+
+  $('latencyGrid').innerHTML = results.map(result => {
+    const tone = latencyTone(result);
+    const detail = result.ok
+      ? `${result.packets_received}/${result.packets_sent} replies · ${result.packet_loss_pct}% loss`
+      : escapeHtml(result.error || 'No response');
+    return `<div class="latency-tile ${tone} ${result.local ? 'local' : ''}">
+      <div class="latency-top">
+        <div>
+          <div class="latency-city">${escapeHtml(result.label)} ${result.local ? '<span style="font-size:11px; color:#1858c4;">local</span>' : ''}</div>
+          <div class="latency-region">${escapeHtml(result.country)} · ${escapeHtml(result.region)}</div>
+        </div>
+        <div class="latency-ms">${latencyMsLabel(result)}</div>
+      </div>
+      <div class="latency-bar"><div class="latency-fill" style="width:${latencyWidth(result)}%;"></div></div>
+      <div class="latency-meta">
+        <div>${escapeHtml(result.ip)}</div>
+        <div>${detail}</div>
+        <div>${escapeHtml(result.source || '')}</div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function runLatencyTest() {
+  clearLatencyErr();
+  $('btnLatencyRun').disabled = true;
+  $('btnLatencyRun').textContent = 'Running...';
+  $('latencyStamp').textContent = 'Test in progress...';
+  try {
+    const data = await api('/api/latency/run', {});
+    renderLatencyResults(data);
+  } catch (e) {
+    showLatencyErr(e.message);
+  } finally {
+    $('btnLatencyRun').disabled = false;
+    $('btnLatencyRun').textContent = 'Run test';
   }
 }
 
@@ -963,21 +1155,34 @@ $('downloadLauncher').addEventListener('click', () => {
 });
 $('cliLauncher').addEventListener('click', () => { closeToolsMenu(); showCliPage(); });
 $('swimLauncher').addEventListener('click', () => { closeToolsMenu(); showSwimPage(); });
+$('latencyLauncher').addEventListener('click', () => { closeToolsMenu(); showLatencyPage(); });
 $('cliBack').addEventListener('click', showMainPage);
 $('swimBack').addEventListener('click', showMainPage);
+$('latencyBack').addEventListener('click', showMainPage);
 $('btnCliRun').addEventListener('click', runCliCommand);
 $('btnSwimStart').addEventListener('click', startSwimUpgrade);
 $('btnSwimDownloadLog').addEventListener('click', downloadSwimLog);
+$('btnLatencyRun').addEventListener('click', runLatencyTest);
 $('cliCommand').addEventListener('keydown', (e) => {
   if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') runCliCommand();
 });
-$('logoutBtn').addEventListener('click', () => {
+$('logoutBtn').addEventListener('click', async () => {
+  const token = getSessionToken();
+  if (token) {
+    fetch('/api/auth/logout', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Project-Steele-Session': token },
+    }).catch(() => {});
+  }
   clearSession();
   resetOrgLoginStep();
   clearErr();
   clearCliErr();
   clearSwimErr();
-  document.getElementById('loginKey').value = '';
+  clearLatencyErr();
+  document.getElementById('loginUsername').value = '';
+  document.getElementById('loginPassword').value = '';
+  document.getElementById('profileApiKey').value = '';
   document.getElementById('loginErr').textContent = '';
   document.getElementById('loginOverlay').style.display = 'flex';
   networks = [];
@@ -1376,7 +1581,7 @@ $('btnAddDiscovered').addEventListener('click', () => {
   $('setupCard').scrollIntoView({ behavior: 'smooth' });
 });
 
-   if (getApiKey() && getOrgId()) {
+   if (getSessionToken() && getOrgId()) {
      loadNetworks().then(() => { addRow(); addRow(); addRow(); });
    } else {
      addRow(); addRow(); addRow();
