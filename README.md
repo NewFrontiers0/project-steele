@@ -175,7 +175,7 @@ For switches that use a management VRF, set **Copy VRF** to the management VRF n
 
 ### Latency
 
-Use **Tools -> Latency** to run a parallel latency test from the project-steele host. The first tile is the local default next-hop gateway detected from the app host routing table. The global tiles use public RIPE Atlas anchor IPv4 targets and show average RTT, packet loss, and target IP. Set `LATENCY_MAX_PARALLEL` to tune concurrent probes; the default is 12.
+Use **Tools -> Latency** to run a continuous parallel latency test from the project-steele host. While the page is open, the app refreshes the measurements every 15 seconds. The first tile is the local default next-hop gateway detected from the app host routing table. The global tiles use public RIPE Atlas anchor IPv4 targets and show average RTT, packet loss, and target IP. Set `LATENCY_MAX_PARALLEL` to tune concurrent probes; the default is 12.
 
 ## How it works
 

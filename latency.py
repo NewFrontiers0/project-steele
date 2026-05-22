@@ -39,7 +39,12 @@ GLOBAL_TARGETS = [
 
 def run_latency_test(count: int = 3, timeout_seconds: int = 2) -> dict:
     targets = []
-    gateway = default_gateway()
+    gateway = None
+    gateway_error = None
+    try:
+        gateway = default_gateway()
+    except Exception as e:
+        gateway_error = str(e) or e.__class__.__name__
     if gateway:
         targets.append(
             LatencyTarget(
@@ -49,6 +54,18 @@ def run_latency_test(count: int = 3, timeout_seconds: int = 2) -> dict:
                 "Local",
                 gateway["gateway"],
                 f"default next-hop via {gateway.get('interface') or 'unknown interface'}",
+                local=True,
+            )
+        )
+    elif gateway_error:
+        targets.append(
+            LatencyTarget(
+                "local",
+                "Local gateway",
+                "LAN",
+                "Local",
+                "unknown",
+                "default next-hop detection failed",
                 local=True,
             )
         )
@@ -63,7 +80,22 @@ def run_latency_test(count: int = 3, timeout_seconds: int = 2) -> dict:
             for index, target in enumerate(targets)
         }
         for future in as_completed(futures):
-            results[futures[future]] = future.result()
+            index = futures[future]
+            try:
+                results[index] = future.result()
+            except Exception as e:
+                target = targets[index]
+                results[index] = {
+                    **_target_dict(target),
+                    **_failed(str(e) or e.__class__.__name__),
+                    "duration_seconds": 0,
+                }
+    if gateway_error and results and results[0] and results[0]["id"] == "local":
+        results[0] = {
+            **_target_dict(targets[0]),
+            **_failed(gateway_error),
+            "duration_seconds": 0,
+        }
 
     completed = int(time.time())
     ok_results = [r for r in results if r and r["ok"] and r["avg_ms"] is not None]
@@ -91,7 +123,11 @@ def default_gateway() -> Optional[dict]:
 
 
 def latency_targets() -> dict:
-    gateway = default_gateway()
+    gateway = None
+    try:
+        gateway = default_gateway()
+    except Exception:
+        gateway = None
     targets = []
     if gateway:
         targets.append({
@@ -109,6 +145,12 @@ def latency_targets() -> dict:
 
 def _measure_target(target: LatencyTarget, count: int, timeout_seconds: int) -> dict:
     started = time.time()
+    if not re.match(r"^\d+\.\d+\.\d+\.\d+$", target.ip):
+        return {
+            **_target_dict(target),
+            **_failed("Target IP could not be detected"),
+            "duration_seconds": round(time.time() - started, 2),
+        }
     result = _ping(target.ip, count, timeout_seconds)
     return {
         **_target_dict(target),
@@ -149,6 +191,8 @@ def _ping(ip: str, count: int, timeout_seconds: int) -> dict:
         return _failed("ping command is not available")
     except subprocess.TimeoutExpired:
         return _failed("ping timed out")
+    except Exception as e:
+        return _failed(str(e) or e.__class__.__name__)
 
     output = f"{proc.stdout}\n{proc.stderr}".strip()
     transmitted, received = _packet_counts(output, count)
@@ -256,6 +300,8 @@ def _command_output(args: list[str]) -> str:
     try:
         proc = subprocess.run(args, capture_output=True, text=True, timeout=3, check=False)
     except (FileNotFoundError, subprocess.TimeoutExpired):
+        return ""
+    except Exception:
         return ""
     return f"{proc.stdout}\n{proc.stderr}".strip()
 

@@ -420,6 +420,8 @@ let networks = [];
 let pollTimer = null;
 let firmwareDownloadPoll = null;
 let swimPollTimer = null;
+let latencyRefreshTimer = null;
+let latencyRunning = false;
 let swimJobId = null;
 let lastSwimJob = null;
 let firmwareDownloadsDismissed = false;
@@ -437,6 +439,7 @@ let loginOrganizations = [];
 let loginMode = 'signin';
 let loginToken = '';
 let loginUsername = '';
+const LATENCY_REFRESH_MS = 15000;
 
 async function loadAppVersion() {
   try {
@@ -609,6 +612,7 @@ async function api(path, body) {
 }
 
 function showMainPage() {
+  stopLatencyAutoRefresh();
   $('cliPage').classList.add('hidden');
   $('swimPage').classList.add('hidden');
   $('latencyPage').classList.add('hidden');
@@ -633,6 +637,7 @@ function toggleToolsMenu() {
 }
 
 function showCliPage() {
+  stopLatencyAutoRefresh();
   clearErr();
   $('swimPage').classList.add('hidden');
   $('latencyPage').classList.add('hidden');
@@ -644,6 +649,7 @@ function showCliPage() {
 }
 
 function showSwimPage() {
+  stopLatencyAutoRefresh();
   clearErr();
   $('cliPage').classList.add('hidden');
   $('latencyPage').classList.add('hidden');
@@ -662,6 +668,7 @@ function showLatencyPage() {
   $('mainPage').classList.add('hidden');
   $('latencyPage').classList.remove('hidden');
   if (!$('latencyGrid').children.length) renderLatencyResults({ results: [] });
+  startLatencyAutoRefresh();
 }
 
 function showCliErr(message) {
@@ -692,6 +699,28 @@ function showLatencyErr(message) {
 
 function clearLatencyErr() {
   $('latencyErr').classList.add('hidden');
+}
+
+function latencyPageVisible() {
+  return !$('latencyPage').classList.contains('hidden');
+}
+
+function stopLatencyAutoRefresh() {
+  if (latencyRefreshTimer) {
+    clearTimeout(latencyRefreshTimer);
+    latencyRefreshTimer = null;
+  }
+}
+
+function scheduleLatencyRefresh() {
+  stopLatencyAutoRefresh();
+  if (!latencyPageVisible() || !getSessionToken()) return;
+  latencyRefreshTimer = setTimeout(() => runLatencyTest(true), LATENCY_REFRESH_MS);
+}
+
+function startLatencyAutoRefresh() {
+  stopLatencyAutoRefresh();
+  runLatencyTest(true);
 }
 
 function formatCliOutput(data) {
@@ -907,7 +936,7 @@ function renderLatencyResults(data) {
   $('latencyAverage').textContent = average === null ? '—' : `${average}`;
   $('latencySlowest').textContent = slowest ? `${Math.round(slowest.avg_ms)}` : '—';
   $('latencyStamp').textContent = data.tested_at
-    ? `Last run ${new Date(data.tested_at * 1000).toLocaleString()} · ${data.duration_seconds}s`
+    ? `Last run ${new Date(data.tested_at * 1000).toLocaleString()} · ${data.duration_seconds}s · auto-refresh ${Math.round(LATENCY_REFRESH_MS / 1000)}s`
     : 'No test run yet.';
 
   if (!results.length) {
@@ -938,7 +967,9 @@ function renderLatencyResults(data) {
   }).join('');
 }
 
-async function runLatencyTest() {
+async function runLatencyTest(auto = false) {
+  if (latencyRunning) return;
+  latencyRunning = true;
   clearLatencyErr();
   $('btnLatencyRun').disabled = true;
   $('btnLatencyRun').textContent = 'Running...';
@@ -948,9 +979,14 @@ async function runLatencyTest() {
     renderLatencyResults(data);
   } catch (e) {
     showLatencyErr(e.message);
+    $('latencyStamp').textContent = auto
+      ? `Last run failed · retrying in ${Math.round(LATENCY_REFRESH_MS / 1000)}s`
+      : 'Last run failed.';
   } finally {
+    latencyRunning = false;
     $('btnLatencyRun').disabled = false;
-    $('btnLatencyRun').textContent = 'Run test';
+    $('btnLatencyRun').textContent = 'Refresh now';
+    scheduleLatencyRefresh();
   }
 }
 
@@ -1162,11 +1198,12 @@ $('latencyBack').addEventListener('click', showMainPage);
 $('btnCliRun').addEventListener('click', runCliCommand);
 $('btnSwimStart').addEventListener('click', startSwimUpgrade);
 $('btnSwimDownloadLog').addEventListener('click', downloadSwimLog);
-$('btnLatencyRun').addEventListener('click', runLatencyTest);
+$('btnLatencyRun').addEventListener('click', () => runLatencyTest(false));
 $('cliCommand').addEventListener('keydown', (e) => {
   if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') runCliCommand();
 });
 $('logoutBtn').addEventListener('click', async () => {
+  stopLatencyAutoRefresh();
   const token = getSessionToken();
   if (token) {
     fetch('/api/auth/logout', {
