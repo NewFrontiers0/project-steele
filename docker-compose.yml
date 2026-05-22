@@ -32,9 +32,15 @@ services:
       SWIM_FTP_PORT: "${SWIM_FTP_PORT:-2121}"
       SWIM_FTP_PASSIVE_PORTS: "${SWIM_FTP_PASSIVE_PORTS:-30000-30009}"
       SWIM_TFTP_PORT: "${SWIM_TFTP_PORT:-69}"
+      CLI_MAX_PARALLEL: "${CLI_MAX_PARALLEL:-10}"
+      LATENCY_MAX_PARALLEL: "${LATENCY_MAX_PARALLEL:-12}"
+      PROJECT_STEELE_USERS_FILE: "${PROJECT_STEELE_USERS_FILE:-/app/data/users.json}"
+      PROFILE_SESSION_HOURS: "${PROFILE_SESSION_HOURS:-12}"
     volumes:
       - firmware:/app/firmware
+      - profile-data:/app/data
     restart: unless-stopped
 
 volumes:
   firmware:
+  profile-data:

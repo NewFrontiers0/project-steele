@@ -1217,10 +1217,6 @@ class SwitchClient:
                             "updated balanced profile; if it repeats, set SWIM_HTTP_PROFILE=safe "
                             f"and retry. Tail:\n{output[-1200:]}"
                         )
-                    if self._install_output_has_failure(lower_tail):
-                        raise SwitchError(
-                            f"Install command reported an error: {output[-1200:]}")
-
                     if (
                         not answered_prompt
                         and ("[y/n]" in lower_tail or "proceed" in lower_tail
@@ -1234,6 +1230,10 @@ class SwitchClient:
                     if "reloading" in lower_tail or "reload" in lower_tail:
                         if on_progress:
                             on_progress(68, "Switch reload is starting")
+
+                    if self._install_output_has_failure(lower_tail):
+                        raise SwitchError(
+                            f"Install command reported an error: {output[-1200:]}")
 
                     if prompt and output[-1000:].rstrip().endswith(prompt) and done_hint in lower_tail:
                         return f"install command returned to prompt. Tail:\n{output[-1200:]}"
@@ -1266,6 +1266,13 @@ class SwitchClient:
 
     @staticmethod
     def _install_output_has_failure(lower_tail):
+        filtered_lines = []
+        for line in lower_tail.splitlines():
+            is_warning = "warning:" in line or line.lstrip().startswith("warning")
+            if is_warning and "compatibility check failed" in line:
+                continue
+            filtered_lines.append(line)
+        lower_tail = "\n".join(filtered_lines)
         failure_patterns = (
             r"%\s*invalid",
             r"error opening",

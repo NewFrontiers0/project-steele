@@ -106,6 +106,17 @@ def _firmware_sort_key(filename: str):
     return (version or (0, 0, 0, 0), filename)
 
 
+def _format_bytes(value: int) -> str:
+    value = max(0, int(value or 0))
+    if value >= 1024 * 1024 * 1024:
+        return f"{value / (1024 * 1024 * 1024):.1f} GB"
+    if value >= 1024 * 1024:
+        return f"{value / (1024 * 1024):.1f} MB"
+    if value >= 1024:
+        return f"{value / 1024:.0f} KB"
+    return f"{value} bytes"
+
+
 class JobStore:
     def __init__(self):
         self._runs: Dict[str, Run] = {}
@@ -140,9 +151,9 @@ class JobStore:
         self._run_stage(run, lambda j: j.status == "pending",
                         self._do_precheck, "precheck_done", "precheck")
 
-    def run_upgrade_stage(self, run, image_filename):
+    def run_upgrade_stage(self, run, image_filename, app_base_url=None):
         self._run_stage(run, lambda j: j.status == "needs_upgrade",
-                        lambda r,j,d: self._do_upgrade(r,j,d,image_filename),
+                        lambda r,j,d: self._do_upgrade(r,j,d,image_filename,app_base_url),
                         "precheck_done", "upgrade")
 
     def run_apply_prereqs_stage(self, run):
@@ -223,7 +234,7 @@ class JobStore:
             except SwitchError as e: self._fail(job, str(e))
             except Exception as e: self._fail(job, f"Unexpected: {e}")
 
-    def _do_upgrade(self, run, job, done_state, image_filename):
+    def _do_upgrade(self, run, job, done_state, image_filename, app_base_url=None):
         with self._semaphore:
             try:
                 local_path = os.path.join(FIRMWARE_DIR, image_filename)
@@ -264,41 +275,66 @@ class JobStore:
                 log("Pausing 5s to let switch release SSH channels from precheck")
                 time.sleep(5)
 
-                # ---- SINGLE SESSION for SCP + verify + install ----
-                # Opening multiple sequential sessions hits 'Resource shortage'
-                # on switches with low VTY limits. One long-lived session
-                # avoids the channel-slot issue entirely.
+                # ---- SINGLE SESSION for direct remote install ----
+                # Use the same dedicated HTTP image server as SWIM so the
+                # switch install subsystem pulls the image directly.
+                if not app_base_url:
+                    raise SwitchError("Direct HTTP install needs the browser app URL")
                 set_progress(5, "Opening SSH session")
                 log(f"Opening SSH session to {job.host}")
                 with SwitchClient(job.host, run.username, run.password, run.secret) as sw:
                     log("  ✓ SSH connected, entered enable mode")
 
-                    # SCP phase (5-60%)
-                    def scp_cb(pct, msg):
-                        set_progress(5 + int(pct * 0.55), msg)
-
                     def switch_log(line):
                         log(f"  {line}")
 
-                    sw.copy_image_to_flash(
-                        local_path, on_progress=scp_cb, on_log=switch_log,
-                        expected_md5=local_md5,
+                    from swim_file_server import (
+                        register_http_progress,
+                        swim_file_url,
+                        unregister_http_progress,
                     )
-                    set_progress(60, "Image on flash")
-                    log("✓ SCP phase complete")
 
-                    # Verify phase (60-65%) — same session
-                    set_progress(62, "Verifying MD5 on switch")
-                    log(f"Running: verify /md5 flash:{image_filename}")
-                    computed = sw.verify_image_on_flash(image_filename, expected_md5=local_md5)
-                    log(f"  switch MD5 = {computed}")
-                    log("✓ MD5 match — image is intact")
-                    set_progress(65, "MD5 match — image is intact")
+                    firmware_url = swim_file_url(app_base_url, image_filename, on_log=switch_log)
+                    log(f"Using direct install HTTP image source: {firmware_url}")
+                    log("Switch install subsystem will pull and install the remote image directly")
+
+                    http_state = {
+                        "complete": False,
+                        "last_log": 0.0,
+                        "last_pct": -1,
+                    }
+
+                    def http_progress(position, total, event, detail):
+                        total = total or size_bytes
+                        pct = int((position / total) * 100) if total else 0
+                        pct = max(0, min(100, pct))
+                        position_label = _format_bytes(position)
+                        total_label = _format_bytes(total)
+                        if event == "request":
+                            log(f"  HTTP file request: {detail}")
+                        elif event == "profile":
+                            log(f"  HTTP serving profile: {detail}")
+                        elif event == "progress":
+                            now = time.time()
+                            if pct != http_state["last_pct"] and (
+                                now - http_state["last_log"] >= 10.0
+                                or pct in (0, 25, 50, 75, 100)
+                            ):
+                                http_state["last_pct"] = pct
+                                http_state["last_log"] = now
+                                log(f"  HTTP server sent {position_label}/{total_label} ({pct}%)")
+                        elif event == "complete" and not http_state["complete"]:
+                            http_state["complete"] = True
+                            log(f"  HTTP file request complete: {detail}")
+                        elif event == "closed":
+                            log(f"  HTTP client closed request at {position_label}: {detail}")
+                        elif event == "error":
+                            log(f"  HTTP file request error: {detail}")
 
                     # Clean up any leftover inactive packages from a previous
                     # failed run, otherwise the add phase will fail with
                     # "Super package already added".
-                    set_progress(65, "Checking for stale install state")
+                    set_progress(12, "Checking install state")
                     log("Running: show install summary")
                     pre_summary = sw.conn.send_command("show install summary", read_timeout=30)
                     log(f"  pre-install summary:\n{pre_summary}")
@@ -311,11 +347,48 @@ class JobStore:
                     else:
                         log("✓ No stale packages to clean")
 
-                    set_progress(66, "install add_activate_commit")
-                    log(f"Running: install add file flash:{image_filename} activate commit prompt-level none")
-                    log("  (fire-and-forget — we won't wait for the prompt to return)")
-                    fire_out = sw.install_add_activate_commit_fire_and_forget(image_filename)
-                    log(f"  {fire_out}")
+                    set_progress(16, "Starting install add")
+                    log(f"Running: install add file {firmware_url}")
+                    http_registration = register_http_progress(image_filename, http_progress)
+                    try:
+                        add_out = sw.install_add_remote_watch(
+                            firmware_url,
+                            on_log=switch_log,
+                            on_progress=set_progress,
+                        )
+                        log(add_out)
+                    except SwitchError as e:
+                        log("Collecting install diagnostics after add failure")
+                        try:
+                            diagnostics = sw.install_diagnostics()
+                            log(f"Install diagnostics:\n{diagnostics[-4000:]}")
+                        except Exception as diag_error:
+                            log(f"Could not collect install diagnostics: {diag_error}")
+                        raise SwitchError(f"Install add failed: {e}") from e
+                    finally:
+                        unregister_http_progress(http_registration)
+
+                    set_progress(58, "Install add complete")
+                    log("Running: show install summary")
+                    post_add_summary = sw.conn.send_command("show install summary", read_timeout=30)
+                    log(f"  post-add summary:\n{post_add_summary}")
+
+                    set_progress(60, "Starting install activate/commit")
+                    log("Running: install activate commit prompt-level none")
+                    try:
+                        activate_out = sw.install_activate_commit_watch(
+                            on_log=switch_log,
+                            on_progress=set_progress,
+                        )
+                        log(activate_out)
+                    except SwitchError as e:
+                        log("Collecting install diagnostics after activate failure")
+                        try:
+                            diagnostics = sw.install_diagnostics()
+                            log(f"Install diagnostics:\n{diagnostics[-4000:]}")
+                        except Exception as diag_error:
+                            log(f"Could not collect install diagnostics: {diag_error}")
+                        raise SwitchError(f"Install activate/commit failed: {e}") from e
                 set_progress(68, "Install command sent, monitoring switch")
 
                 # Phase 3: wait for reload using active probing (67-92%)
