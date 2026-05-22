@@ -4,6 +4,7 @@ from __future__ import annotations
 import os
 import platform
 import re
+import socket
 import subprocess
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -20,6 +21,7 @@ class LatencyTarget:
     ip: str
     source: str = "RIPE Atlas anchor"
     local: bool = False
+    tcp_port: int = 443
 
 
 # Public RIPE Atlas anchor IPv4 targets. They are intentionally centralized so
@@ -152,6 +154,8 @@ def _measure_target(target: LatencyTarget, count: int, timeout_seconds: int) -> 
             "duration_seconds": round(time.time() - started, 2),
         }
     result = _ping(target.ip, count, timeout_seconds)
+    if not result["ok"] and _should_try_tcp_fallback(result.get("error")):
+        result = _tcp_latency(target.ip, target.tcp_port, count, timeout_seconds, result.get("error"))
     return {
         **_target_dict(target),
         **result,
@@ -168,6 +172,7 @@ def _target_dict(target: LatencyTarget) -> dict:
         "ip": target.ip,
         "source": target.source,
         "local": target.local,
+        "tcp_port": target.tcp_port,
     }
 
 
@@ -204,6 +209,7 @@ def _ping(ip: str, count: int, timeout_seconds: int) -> dict:
     return {
         "ok": ok,
         "status": "reachable" if ok else "unreachable",
+        "method": "ICMP",
         "avg_ms": avg_ms,
         "min_ms": _stat_ms(output, 1),
         "max_ms": _stat_ms(output, 3),
@@ -252,6 +258,7 @@ def _failed(error: str) -> dict:
     return {
         "ok": False,
         "status": "failed",
+        "method": "ICMP",
         "avg_ms": None,
         "min_ms": None,
         "max_ms": None,
@@ -259,6 +266,59 @@ def _failed(error: str) -> dict:
         "packets_sent": 0,
         "packets_received": 0,
         "error": error,
+    }
+
+
+def _should_try_tcp_fallback(error: Optional[str]) -> bool:
+    if not error:
+        return False
+    lowered = error.lower()
+    return (
+        "operation not permitted" in lowered
+        or "permission denied" in lowered
+        or "ping command is not available" in lowered
+        or "icmp" in lowered
+    )
+
+
+def _tcp_latency(ip: str, port: int, count: int, timeout_seconds: int, icmp_error: Optional[str]) -> dict:
+    samples = []
+    last_error = icmp_error or "ICMP probe failed"
+    for _ in range(max(1, count)):
+        started = time.perf_counter()
+        try:
+            with socket.create_connection((ip, port), timeout=timeout_seconds):
+                samples.append((time.perf_counter() - started) * 1000)
+        except OSError as e:
+            last_error = str(e) or e.__class__.__name__
+
+    if not samples:
+        return {
+            "ok": False,
+            "status": "unreachable",
+            "method": f"TCP/{port}",
+            "avg_ms": None,
+            "min_ms": None,
+            "max_ms": None,
+            "packet_loss_pct": 100.0,
+            "packets_sent": max(1, count),
+            "packets_received": 0,
+            "error": f"ICMP unavailable; TCP/{port} failed: {last_error}",
+        }
+
+    sent = max(1, count)
+    received = len(samples)
+    return {
+        "ok": True,
+        "status": "reachable",
+        "method": f"TCP/{port}",
+        "avg_ms": round(sum(samples) / received, 1),
+        "min_ms": round(min(samples), 1),
+        "max_ms": round(max(samples), 1),
+        "packet_loss_pct": round(max(0, sent - received) * 100 / sent, 1),
+        "packets_sent": sent,
+        "packets_received": received,
+        "error": None,
     }
 
 

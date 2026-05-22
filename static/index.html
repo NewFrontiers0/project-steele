@@ -947,7 +947,7 @@ function renderLatencyResults(data) {
   $('latencyGrid').innerHTML = results.map(result => {
     const tone = latencyTone(result);
     const detail = result.ok
-      ? `${result.packets_received}/${result.packets_sent} replies · ${result.packet_loss_pct}% loss`
+      ? `${escapeHtml(result.method || 'ICMP')} · ${result.packets_received}/${result.packets_sent} replies · ${result.packet_loss_pct}% loss`
       : escapeHtml(result.error || 'No response');
     return `<div class="latency-tile ${tone} ${result.local ? 'local' : ''}">
       <div class="latency-top">
