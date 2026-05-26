@@ -10,7 +10,7 @@ cd meraki-onboarder-bulk
 ./run.sh
 ```
 
-Open <http://127.0.0.1:8001> on the machine running the app, or `http://<machine-ip>:8001` from another device on the LAN. Create a local project-steele profile, link your dashboard API key once, then sign in with username/password. Use the top-left organization dropdown after login to choose the organization you want to work in. The bulk app runs on **port 8001** so you can run it alongside the single-device app (which runs on 8000).
+Open <http://127.0.0.1:8001> on the machine running the app, or `http://<machine-ip>:8001` from another device on the LAN. Create a local project-steele profile, link your dashboard API key once, then sign in with username/password. Use the top-right organization dropdown after login to choose the organization you want to work in. The bulk app runs on **port 8001** so you can run it alongside the single-device app (which runs on 8000).
 
 `./run.sh` automatically stops existing processes listening on the app port and the SWIM transfer ports before starting. To disable that behavior, run `KILL_PORT_LISTENER=0 ./run.sh`. To use different ports, run `PORT=8002 SWIM_FILE_PORT=9001 SWIM_FTP_PORT=2122 ./run.sh`. TFTP uses standard UDP/69 because Cisco IOS-XE rejects TFTP URLs with explicit ports. On Linux, `./run.sh` automatically grants the local Python runtime permission to bind UDP/69 and may prompt for `sudo` once; Docker works without that extra step.
 
@@ -180,7 +180,7 @@ Use **Tools -> Latency** to run a continuous parallel latency test from the proj
 ## How it works
 
 1. Create or sign in to a local project-steele profile. Profiles store a salted password hash plus the linked dashboard API key in `PROJECT_STEELE_USERS_FILE`.
-2. Select the active organization from the top-left organization dropdown in the signed-in UI.
+2. Select the active organization from the top-right organization dropdown in the signed-in UI.
 3. Enter a shared username + password and pick a default target network.
 4. Add device rows (just the management IP for each). Optionally override the target network per row — leave blank to use the default.
 5. Hit **Create run & precheck**. The backend returns a `run_id` immediately and the page switches to a live status table.
