@@ -6,6 +6,7 @@
 <style>
   body { margin:0; font-family:'Inter','Helvetica Neue',Helvetica,Arial,sans-serif; color:#1a2433; background:#f5f7f9; }
   .topbar { background:#0e2747; padding:14px 28px; color:#fff; display:flex; align-items:center; gap:14px; }
+  .topbar-left { display:flex; align-items:center; gap:16px; min-width:0; }
   .brand { display:flex; align-items:baseline; gap:8px; font-size:18px; }
   .app-version { color:#a8bad0; font-size:11px; font-weight:500; }
   .logo-mark { display:flex; flex-direction:column; gap:2px; }
@@ -14,6 +15,10 @@
   .topbar-actions { margin-left:auto; display:flex; align-items:center; gap:8px; }
   .topbar-action { background:#16375f; border:1px solid #315a89; color:#f8fafc; padding:7px 12px; border-radius:6px; font-size:12px; font-weight:500; cursor:pointer; font-family:inherit; }
   .topbar-action:hover { background:#1f4778; border-color:#6f95c7; }
+  .org-picker { display:flex; align-items:center; gap:8px; min-width:0; }
+  .org-picker label { margin:0; color:#a8bad0; font-size:11px; white-space:nowrap; }
+  .org-picker select { width:auto; min-width:190px; max-width:300px; padding:7px 30px 7px 10px; border-color:#315a89; background:#16375f; color:#f8fafc; font-size:12px; }
+  .org-picker select:focus { outline:none; border-color:#7aa3d6; box-shadow:0 0 0 2px rgba(122,163,214,0.25); }
   .tools-menu { position:relative; }
   .tools-toggle { display:flex; align-items:center; gap:8px; }
   .tools-toggle::after { content:""; width:0; height:0; border-left:4px solid transparent; border-right:4px solid transparent; border-top:5px solid #d7e3f2; }
@@ -115,6 +120,13 @@
     0% { transform:translateX(-110%); }
     100% { transform:translateX(280%); }
   }
+  @media (max-width: 760px) {
+    .topbar { flex-wrap:wrap; padding:12px 16px; }
+    .topbar-left { flex:1 1 100%; flex-wrap:wrap; }
+    .topbar-actions { margin-left:0; }
+    .org-picker { flex:1 1 100%; align-items:flex-start; flex-direction:column; gap:5px; }
+    .org-picker select { width:100%; max-width:none; }
+  }
 </style>
 </head>
 <body>
@@ -123,7 +135,7 @@
   <div style="background:#fff; border-radius:8px; padding:32px; width:460px; max-width:90vw; box-shadow:0 20px 60px rgba(0,0,0,0.3);">
     <div style="display:flex; align-items:baseline; gap:8px; margin-bottom:8px;">
       <div style="font-size:22px; font-weight:600; color:#0e2747;">project-steele</div>
-      <div id="loginVersion" style="font-size:11px; color:#8896a8; font-weight:500;">v1.1.0</div>
+      <div id="loginVersion" style="font-size:11px; color:#8896a8; font-weight:500;">v1.1.1</div>
     </div>
     <div style="font-size:13px; color:#5a6878; margin-bottom:20px;">Sign in with a project-steele profile. The dashboard API key stays linked to the profile.</div>
     <div class="auth-tabs">
@@ -137,10 +149,6 @@
     <div id="profileKeyStep" class="hidden" style="margin-top:12px;">
       <label style="font-size:12px; color:#5a6878; display:block; margin-bottom:6px;">Dashboard API key</label>
       <input id="profileApiKey" type="password" autocomplete="off" placeholder="API key to link to this profile" style="width:100%; padding:10px 12px; border:1px solid #c1cad5; border-radius:6px; font-size:13px; box-sizing:border-box;" />
-    </div>
-    <div id="orgStep" class="hidden" style="margin-top:14px;">
-      <label style="font-size:12px; color:#5a6878; display:block; margin-bottom:6px;">Organization</label>
-      <select id="loginOrg"></select>
     </div>
     <div id="loginErr" style="color:#b3261e; font-size:12px; margin-top:8px; min-height:16px;"></div>
     <button id="loginBtn" class="primary" style="width:100%; margin-top:16px; padding:10px;">Sign in</button>
@@ -176,7 +184,13 @@
 </div>
 
 <div class="topbar">
-  <div class="brand">project-steele <span id="appVersion" class="app-version">v1.1.0</span></div>
+  <div class="topbar-left">
+    <div class="brand">project-steele <span id="appVersion" class="app-version">v1.1.1</span></div>
+    <div id="orgPicker" class="org-picker hidden">
+      <label for="topOrgSelect">Organization</label>
+      <select id="topOrgSelect"></select>
+    </div>
+  </div>
   <div class="topbar-actions">
     <div id="toolsMenu" class="tools-menu">
       <button id="toolsMenuToggle" class="topbar-action tools-toggle" aria-haspopup="true" aria-expanded="false">Tools</button>
@@ -434,11 +448,10 @@ const SESSION_TOKEN_STORAGE = 'project_steele_session_token';
 const USERNAME_STORAGE = 'project_steele_username';
 const ORG_ID_STORAGE = 'project_steele_org_id';
 const ORG_NAME_STORAGE = 'project_steele_org_name';
+const ORG_LIST_STORAGE = 'project_steele_organizations';
 
-let loginOrganizations = [];
+let availableOrganizations = [];
 let loginMode = 'signin';
-let loginToken = '';
-let loginUsername = '';
 const LATENCY_REFRESH_MS = 15000;
 
 async function loadAppVersion() {
@@ -465,7 +478,10 @@ function clearSession() {
   sessionStorage.removeItem(USERNAME_STORAGE);
   sessionStorage.removeItem(ORG_ID_STORAGE);
   sessionStorage.removeItem(ORG_NAME_STORAGE);
+  sessionStorage.removeItem(ORG_LIST_STORAGE);
+  availableOrganizations = [];
   updateOrgLabel();
+  renderOrgPicker();
 }
 
 function escapeHtml(value) {
@@ -474,18 +490,75 @@ function escapeHtml(value) {
   }[ch]));
 }
 
+function getStoredOrganizations() {
+  const raw = sessionStorage.getItem(ORG_LIST_STORAGE);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(org => org && org.id && org.name);
+  } catch (_) {
+    return [];
+  }
+}
+
+function currentOrganizations() {
+  return availableOrganizations.length ? availableOrganizations : getStoredOrganizations();
+}
+
+function storeOrganizations(organizations) {
+  availableOrganizations = Array.isArray(organizations)
+    ? organizations.filter(org => org && org.id && org.name)
+    : [];
+  sessionStorage.setItem(ORG_LIST_STORAGE, JSON.stringify(availableOrganizations));
+  renderOrgPicker();
+}
+
+function renderOrgPicker() {
+  const picker = document.getElementById('orgPicker');
+  const select = document.getElementById('topOrgSelect');
+  if (!picker || !select) return;
+  const organizations = currentOrganizations();
+  if (!getSessionToken() || !organizations.length) {
+    picker.classList.add('hidden');
+    select.innerHTML = '';
+    return;
+  }
+  select.innerHTML = organizations
+    .map(org => `<option value="${escapeHtml(org.id)}">${escapeHtml(org.name)}</option>`)
+    .join('');
+  select.value = getOrgId() || organizations[0].id;
+  picker.classList.remove('hidden');
+}
+
 function updateOrgLabel() {
   const name = sessionStorage.getItem(ORG_NAME_STORAGE);
   const label = document.getElementById('selectedOrgName');
   if (label) label.textContent = name ? `· ${name}` : '';
+  renderOrgPicker();
 }
 
-function resetOrgLoginStep() {
-  loginOrganizations = [];
-  loginToken = '';
-  loginUsername = '';
-  document.getElementById('orgStep').classList.add('hidden');
-  document.getElementById('loginOrg').innerHTML = '';
+function selectOrganization(organization) {
+  if (!organization) {
+    sessionStorage.removeItem(ORG_ID_STORAGE);
+    sessionStorage.removeItem(ORG_NAME_STORAGE);
+    updateOrgLabel();
+    return null;
+  }
+  sessionStorage.setItem(ORG_ID_STORAGE, organization.id);
+  sessionStorage.setItem(ORG_NAME_STORAGE, organization.name);
+  updateOrgLabel();
+  return organization;
+}
+
+function ensureSelectedOrganization(organizations) {
+  const choices = Array.isArray(organizations) ? organizations : currentOrganizations();
+  if (!choices.length) return selectOrganization(null);
+  const selected = choices.find(org => org.id === getOrgId()) || choices[0];
+  return selectOrganization(selected);
+}
+
+function resetLoginState() {
   document.getElementById('loginBtn').textContent = loginMode === 'create' ? 'Create profile' : 'Sign in';
 }
 
@@ -496,7 +569,7 @@ function setLoginMode(nextMode) {
   document.getElementById('profileKeyStep').classList.toggle('hidden', loginMode !== 'create');
   document.getElementById('loginPassword').setAttribute('autocomplete', loginMode === 'create' ? 'new-password' : 'current-password');
   document.getElementById('loginErr').textContent = '';
-  resetOrgLoginStep();
+  resetLoginState();
 }
 
 async function fetchAuth(path, body) {
@@ -516,7 +589,6 @@ document.getElementById('loginBtn').addEventListener('click', async () => {
   const username = document.getElementById('loginUsername').value.trim();
   const password = document.getElementById('loginPassword').value;
   const apiKey = document.getElementById('profileApiKey').value.trim();
-  const orgSelect = document.getElementById('loginOrg');
   const loginBtn = document.getElementById('loginBtn');
   const errBox = document.getElementById('loginErr');
   errBox.textContent = '';
@@ -525,61 +597,40 @@ document.getElementById('loginBtn').addEventListener('click', async () => {
   if (loginMode === 'create' && !apiKey) { errBox.textContent = 'Enter the dashboard API key to link'; return; }
 
   try {
-    if (!loginOrganizations.length || !loginToken) {
-      loginBtn.disabled = true;
-      loginBtn.textContent = loginMode === 'create' ? 'Creating...' : 'Checking...';
-      const data = loginMode === 'create'
-        ? await fetchAuth('/api/auth/register', { username, password, api_key: apiKey })
-        : await fetchAuth('/api/auth/login', { username, password });
-      loginOrganizations = data.organizations || [];
-      loginToken = data.token || '';
-      loginUsername = data.username || username;
-      if (!loginOrganizations.length) {
-        errBox.textContent = 'No project-steele organizations are available for this profile';
-        resetOrgLoginStep();
-        return;
-      }
-      orgSelect.innerHTML = loginOrganizations
-        .map(org => `<option value="${escapeHtml(org.id)}">${escapeHtml(org.name)}</option>`)
-        .join('');
-      document.getElementById('orgStep').classList.remove('hidden');
-      loginBtn.textContent = 'Sign in';
+    loginBtn.disabled = true;
+    loginBtn.textContent = loginMode === 'create' ? 'Creating...' : 'Signing in...';
+    const data = loginMode === 'create'
+      ? await fetchAuth('/api/auth/register', { username, password, api_key: apiKey })
+      : await fetchAuth('/api/auth/login', { username, password });
+    const organizations = data.organizations || [];
+    if (!organizations.length) {
+      errBox.textContent = 'No project-steele organizations are available for this profile';
+      resetLoginState();
       return;
     }
 
-    const selectedOrg = loginOrganizations.find(org => org.id === orgSelect.value);
-    if (!selectedOrg) { errBox.textContent = 'Select an organization'; return; }
-    sessionStorage.setItem(SESSION_TOKEN_STORAGE, loginToken);
-    sessionStorage.setItem(USERNAME_STORAGE, loginUsername);
-    sessionStorage.setItem(ORG_ID_STORAGE, selectedOrg.id);
-    sessionStorage.setItem(ORG_NAME_STORAGE, selectedOrg.name);
-    updateOrgLabel();
+    sessionStorage.setItem(SESSION_TOKEN_STORAGE, data.token || '');
+    sessionStorage.setItem(USERNAME_STORAGE, data.username || username);
+    storeOrganizations(organizations);
+    ensureSelectedOrganization(organizations);
     document.getElementById('loginOverlay').style.display = 'none';
     clearErr();
-    if (typeof loadNetworks === 'function') loadNetworks();
+    showMainPage();
+    await loadNetworks();
   } catch (e) {
     errBox.textContent = e.message || 'Network error';
-    resetOrgLoginStep();
+    resetLoginState();
   } finally {
     loginBtn.disabled = false;
-    loginBtn.textContent = loginOrganizations.length ? 'Sign in' : (loginMode === 'create' ? 'Create profile' : 'Sign in');
+    resetLoginState();
   }
 });
 
 document.getElementById('authSignInTab').addEventListener('click', () => setLoginMode('signin'));
 document.getElementById('authCreateTab').addEventListener('click', () => setLoginMode('create'));
-document.getElementById('loginUsername').addEventListener('input', resetOrgLoginStep);
-document.getElementById('loginPassword').addEventListener('input', resetOrgLoginStep);
-document.getElementById('profileApiKey').addEventListener('input', resetOrgLoginStep);
-
-// On page load: if we already have a session token and org in sessionStorage, hide login.
-// Otherwise it stays visible (it's display:flex by default).
-if (getSessionToken() && getOrgId()) {
-  document.getElementById('loginOverlay').style.display = 'none';
-  updateOrgLabel();
-} else {
-  clearSession();
-}
+document.getElementById('loginUsername').addEventListener('input', resetLoginState);
+document.getElementById('loginPassword').addEventListener('input', resetLoginState);
+document.getElementById('profileApiKey').addEventListener('input', resetLoginState);
 
 // Allow Enter key to submit
 ['loginUsername', 'loginPassword', 'profileApiKey'].forEach(id => {
@@ -603,12 +654,69 @@ async function api(path, body) {
   const r = await fetch(path, opts);
   if (r.status === 401 || r.status === 403) {
     clearSession();
-    resetOrgLoginStep();
+    resetLoginState();
     document.getElementById('loginOverlay').style.display = 'flex';
     throw new Error('Authentication required');
   }
   if (!r.ok) { const e = await r.json().catch(()=>({detail:r.statusText})); throw new Error(e.detail || r.statusText); }
   return r.json();
+}
+
+async function refreshOrganizationsForSession() {
+  const data = await api('/api/auth/organizations');
+  const organizations = data.organizations || [];
+  storeOrganizations(organizations);
+  ensureSelectedOrganization(organizations);
+  return organizations;
+}
+
+async function bootstrapSession() {
+  if (!getSessionToken()) {
+    clearSession();
+    return;
+  }
+  document.getElementById('loginOverlay').style.display = 'none';
+  try {
+    const organizations = currentOrganizations().length
+      ? currentOrganizations()
+      : await refreshOrganizationsForSession();
+    ensureSelectedOrganization(organizations);
+    await loadNetworks();
+  } catch (e) {
+    if (getSessionToken()) showErr('Could not load organizations: ' + e.message);
+  }
+}
+
+function resetWorkspaceForOrganizationChange() {
+  networks = [];
+  runId = null;
+  mode = null;
+  openJobLogs.clear();
+  document.querySelectorAll('.mode-opt').forEach(o => o.classList.remove('selected'));
+  $('cloudWarning').classList.add('hidden');
+  $('statusCard').classList.add('hidden');
+  $('setupCard').classList.remove('hidden');
+  $('statGrid').innerHTML = '';
+  $('statusRows').innerHTML = '';
+  $('runIdBadge').textContent = '';
+  $('modeBadge').textContent = '';
+  $('deviceRows').innerHTML = '';
+  addRow(); addRow(); addRow();
+  $('scanStatus').classList.add('hidden');
+  $('scanResults').classList.add('hidden');
+  $('scanRows').innerHTML = '';
+  if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+  if (scanTimer) { clearInterval(scanTimer); scanTimer = null; }
+  scanId = null;
+  showMainPage();
+}
+
+async function handleOrganizationChange(organization) {
+  if (!organization) return;
+  selectOrganization(organization);
+  clearErr();
+  resetWorkspaceForOrganizationChange();
+  await loadNetworks();
 }
 
 function showMainPage() {
@@ -1195,6 +1303,14 @@ $('latencyLauncher').addEventListener('click', () => { closeToolsMenu(); showLat
 $('cliBack').addEventListener('click', showMainPage);
 $('swimBack').addEventListener('click', showMainPage);
 $('latencyBack').addEventListener('click', showMainPage);
+$('topOrgSelect').addEventListener('change', async (e) => {
+  const organization = currentOrganizations().find(org => org.id === e.target.value);
+  try {
+    await handleOrganizationChange(organization);
+  } catch (err) {
+    showErr('Could not switch organization: ' + err.message);
+  }
+});
 $('btnCliRun').addEventListener('click', runCliCommand);
 $('btnSwimStart').addEventListener('click', startSwimUpgrade);
 $('btnSwimDownloadLog').addEventListener('click', downloadSwimLog);
@@ -1212,7 +1328,7 @@ $('logoutBtn').addEventListener('click', async () => {
     }).catch(() => {});
   }
   clearSession();
-  resetOrgLoginStep();
+  resetLoginState();
   clearErr();
   clearCliErr();
   clearSwimErr();
@@ -1261,6 +1377,11 @@ function addRow(host) {
 }
 
 async function loadNetworks() {
+  if (!getOrgId()) {
+    networks = [];
+    $('defaultNet').innerHTML = '<option value="">Select an organization</option>';
+    return;
+  }
   try {
     networks = await api('/api/networks');
     $('defaultNet').innerHTML = networks.length
@@ -1618,11 +1739,8 @@ $('btnAddDiscovered').addEventListener('click', () => {
   $('setupCard').scrollIntoView({ behavior: 'smooth' });
 });
 
-   if (getSessionToken() && getOrgId()) {
-     loadNetworks().then(() => { addRow(); addRow(); addRow(); });
-   } else {
-     addRow(); addRow(); addRow();
-   }
+addRow(); addRow(); addRow();
+bootstrapSession();
 loadAppVersion();
 loadFirmware();
 loadSwimImages();

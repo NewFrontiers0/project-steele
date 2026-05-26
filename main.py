@@ -195,42 +195,46 @@ def _meraki_error_status(error: MerakiError) -> int:
     return 502
 
 
-@app.post("/api/login")
-def login(api_key: str = Depends(_get_api_key)):
+def _list_organization_options(api_key: str, empty_detail: str) -> list[OrganizationOption]:
     try:
         organizations = MerakiClient(api_key).list_organizations()
     except MerakiError as e:
         raise HTTPException(status_code=_meraki_error_status(e), detail=str(e))
     if not organizations:
-        raise HTTPException(status_code=403, detail="No project-steele organizations are available for this API key")
-    return {"ok": True, "organizations": [OrganizationOption(**org) for org in organizations]}
+        raise HTTPException(status_code=403, detail=empty_detail)
+    return [OrganizationOption(**org) for org in organizations]
+
+
+@app.post("/api/login")
+def login(api_key: str = Depends(_get_api_key)):
+    organizations = _list_organization_options(
+        api_key,
+        "No project-steele organizations are available for this API key",
+    )
+    return {"ok": True, "organizations": organizations}
 
 
 def _auth_response(username: str, api_key: str) -> dict:
-    try:
-        organizations = MerakiClient(api_key).list_organizations()
-    except MerakiError as e:
-        raise HTTPException(status_code=_meraki_error_status(e), detail=str(e))
-    if not organizations:
-        raise HTTPException(status_code=403, detail="No project-steele organizations are available for this profile")
+    organizations = _list_organization_options(
+        api_key,
+        "No project-steele organizations are available for this profile",
+    )
     token = user_store.create_session(username)
     return {
         "ok": True,
         "username": username,
         "token": token,
-        "organizations": [OrganizationOption(**org) for org in organizations],
+        "organizations": organizations,
     }
 
 
 @app.post("/api/auth/register")
 def auth_register(req: AuthRegisterRequest):
     api_key = req.api_key.strip()
-    try:
-        organizations = MerakiClient(api_key).list_organizations()
-    except MerakiError as e:
-        raise HTTPException(status_code=_meraki_error_status(e), detail=str(e))
-    if not organizations:
-        raise HTTPException(status_code=403, detail="No project-steele organizations are available for this API key")
+    organizations = _list_organization_options(
+        api_key,
+        "No project-steele organizations are available for this API key",
+    )
     try:
         username = user_store.create_user(req.username, req.password, api_key)
     except ProfileError as e:
@@ -240,7 +244,7 @@ def auth_register(req: AuthRegisterRequest):
         "ok": True,
         "username": username,
         "token": token,
-        "organizations": [OrganizationOption(**org) for org in organizations],
+        "organizations": organizations,
     }
 
 
@@ -252,6 +256,15 @@ def auth_login(req: AuthLoginRequest):
     except (AuthError, ProfileError) as e:
         raise HTTPException(status_code=401, detail=str(e))
     return _auth_response(username, api_key)
+
+
+@app.get("/api/auth/organizations")
+def auth_organizations(api_key: str = Depends(_get_api_key)):
+    organizations = _list_organization_options(
+        api_key,
+        "No project-steele organizations are available for this profile",
+    )
+    return {"ok": True, "organizations": organizations}
 
 
 @app.post("/api/auth/logout")
